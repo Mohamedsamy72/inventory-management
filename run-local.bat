@@ -39,16 +39,22 @@ for /f "delims=" %%v in ('node --version') do set "NODE_VERSION=%%v"
 echo   node            : !NODE_VERSION!
 
 REM ---- 2. PostgreSQL ------------------------------------------------------
-echo [2/8] Checking PostgreSQL on port 5432...
+echo [2/8] Checking PostgreSQL on port 5433...
 
-netstat -an | findstr /C:"127.0.0.1:5432" /C:"0.0.0.0:5432" >nul 2>&1
+netstat -an | findstr /C:"127.0.0.1:5433" /C:"0.0.0.0:5433" >nul 2>&1
 if errorlevel 1 (
   echo.
   echo   ============================================================
-  echo    FAILED: PostgreSQL is NOT listening on port 5432.
+  echo    FAILED: PostgreSQL is NOT listening on port 5433.
   echo   ============================================================
   echo    PostgreSQL 16+ is a hard prerequisite. Install it, then
   echo    re-run this script.
+  echo.
+  echo    This repo's dedicated instance runs on port 5433, not the
+  echo    PostgreSQL default 5432, because 5432 is already held by an
+  echo    unrelated project on this machine (see docs/33 section 4.3).
+  echo    Start it with: C:\pg-inventory-system\pgsql\bin\pg_ctl.exe
+  echo    -D C:\pg-inventory-system\data -l logfile start
   echo.
   echo    This script will NOT substitute SQL Server, MySQL or any
   echo    other engine. The schema depends on PostgreSQL-specific
@@ -58,7 +64,7 @@ if errorlevel 1 (
   echo   ============================================================
   goto :fail
 )
-echo   PostgreSQL      : listening on 5432
+echo   PostgreSQL      : listening on 5433
 
 REM ---- 3. Migrations ------------------------------------------------------
 echo [3/8] Applying EF Core migrations (forward only)...

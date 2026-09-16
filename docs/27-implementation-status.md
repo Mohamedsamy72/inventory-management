@@ -2,7 +2,7 @@
 
 > **Document ID:** SPEC-27
 > **Status:** Live Implementation Register
-> **Current State:** **Phase 1 CLOSED (2026-09-16).** Backend `dotnet build -warnaserror` -> 0 errors, 0 warnings across all 7 projects; `dotnet test` -> 23/23 passing (2 unit, 13 architecture, 8 integration). Frontend verified green (typecheck, lint, 3/3 tests, production build). All 5 architecture-rule mechanisms proven by temporary deliberate violation. CI installed at `.github/workflows/ci.yml`. **Phase 2 is next and remains blocked on PostgreSQL — see §4 for a material update to that blocker's context, raised to the project owner and not yet resolved.**
+> **Current State:** **Phase 1 CLOSED (2026-09-16).** Backend `dotnet build -warnaserror` -> 0 errors, 0 warnings across all 7 projects; `dotnet test` -> 23/23 passing (2 unit, 13 architecture, 8 integration). Frontend verified green (typecheck, lint, 3/3 tests, production build). All 5 architecture-rule mechanisms proven by temporary deliberate violation. CI installed at `.github/workflows/ci.yml`. **PostgreSQL 16.15 installed and running (2026-09-16) — Phase 2's sole blocker is resolved. Phase 2 is next.**
 > **Plan Authority:** `docs/09-implementation-plan.md` (supersedes `docs/22-implementation-plan.md`).
 
 ---
@@ -23,7 +23,7 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | :--- | :--- | :---: | :--- | :---: |
 | **P0** | Documentation reconciliation & decision gate | ✅ **COMPLETE** | None. All product decisions closed (ADR-027 … ADR-030). | Awaiting approval |
 | **P1** | Solution architecture & infrastructure | ✅ **COMPLETE** | All 17 tasks done and verified by executed command (§6.1, §9). Backend build/test executed directly on the machine (a working .NET toolchain is reachable — the `docs/33 §7.2` unreachable-toolchain note applied to an earlier assisting session, not this one). CI workflow installed at `.github/workflows/ci.yml`. | ✅ Signed off 2026-09-16 |
-| **P2** | Database foundation, tenancy, initial migration | ⛔ **BLOCKED** | **PostgreSQL 16+ is not installed** (`docs/33 §4.3`). No substitute permitted (ADR-027). Composite tenant FKs must be in the initial migration. | — |
+| **P2** | Database foundation, tenancy, initial migration | ⏳ **UNBLOCKED — Pending** | PostgreSQL 16.15 installed and running, dedicated to this repo (`docs/33 §4.3`, `docs/19 §1`). Composite tenant FKs must be in the initial migration. Not yet started. | — |
 | **P3** | Authentication, sessions, CSRF, rate limiting | ⏳ Pending | Both OTP rate windows (ADR-026). | — |
 | **P4** | Authorization, scopes, role denial, **audit infrastructure** | ⏳ Pending | Audit must be transactional from the first mutation. | — |
 | **P5** | Master data | ⏳ Pending | Gap-free concurrent code generation. | — |
@@ -55,7 +55,7 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 
 | Checkpoint | Covers | Status |
 | :---: | :--- | :---: |
-| **1** | Architecture & Database (P1–P2) | 🔄 Half reached — P1 signed off, P2 blocked (§4) |
+| **1** | Architecture & Database (P1–P2) | 🔄 Half reached — P1 signed off, P2 unblocked and pending |
 | **2** | Identity & Authorization (P3–P4, F1–F2) | ⏳ Not reached |
 | **3** | Master Data & Conversions (P5–P6, F3) | ⏳ Not reached |
 | **4** | Stock Engine & Receiving (P7–P8, F4) | ⏳ Not reached |
@@ -75,13 +75,13 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **OD-010** | Unavailable transcript | ✅ **CLOSED** | ADR-030 |
 | **OD-011** | Files and reports | ✅ **CLOSED** (both deferred) | ADR-029 |
 
-**All product decisions are closed.** The only outstanding blocker is environmental:
+**All product decisions are closed. The environmental blocker is resolved as of 2026-09-16.**
 
-| Blocker | Blocks | Requirement |
-| :--- | :--- | :--- |
-| **PostgreSQL 16+ not installed *for this repository*** | **P2 onward** | Install PostgreSQL 16 or later, or get explicit direction on the item below. SQL Server, MySQL, and Oracle are present on the machine and are **explicitly rejected** (ADR-027). |
+| Former blocker | Resolution |
+| :--- | :--- |
+| PostgreSQL 16+ not installed for this repository | **Resolved.** PostgreSQL 16.15 portable binaries installed at `C:\pg-inventory-system\` (outside the repository — its own root path contains Arabic characters, which PostgreSQL's Windows binaries cannot start from; see `docs/19 §1` and `docs/33 §4.3` for the reproduced failure and full rationale), listening on port `5433` (not the default 5432 — see below), database `restaurant_inventory` created, superuser password matches `appsettings.Development.json`. SQL Server, MySQL, and Oracle remain present on the machine and remain **explicitly rejected** (ADR-027). |
 
-**Material update (2026-09-16, `docs/33 §4.3`/§7.4):** a PostgreSQL 16 process *is* running on `localhost:5432`, but it belongs to a separate, unrelated project directory (`D:\Invetory management`, not this repository) and was left running from a prior session on that other project. Its documented databases (`inventory_dev`/`inventory_test`, password `dev`) do not match this repository's expected database (`restaurant_inventory`, password `postgres`). **It has not been adopted or connected to.** This is raised to the project owner as an open question — not decided unilaterally — because connecting Phase 2 to an ambient database instance without confirming it is the intended one is exactly the kind of assumption ADR-027 exists to prevent. Until answered, PostgreSQL remains **not installed for this repository** and P2 remains blocked.
+**Context, resolved not deferred:** a *separate* PostgreSQL process was found already running on `localhost:5432`, belonging to an unrelated project directory (`D:\Invetory management`, not this repository). Per explicit project-owner direction (2026-09-16): that instance is left completely untouched, and this repository has its own dedicated instance instead, on port `5433`. `docs/33 §4.3` records the full detail.
 
 ---
 
@@ -161,7 +161,7 @@ Verified on `koshary`, 2026-09-10, by direct filesystem inspection (the device s
 | Node.js | ≥ 20.9 | `v22.20.0`, confirmed exactly by executed command | ✅ |
 | npm | bundled | `10.9.3`, confirmed by executed command | ✅ |
 | Git | any | `2.47.0.windows.1`, confirmed by executed command | ✅ |
-| **PostgreSQL** (for this repository) | **16+** | **NOT FOUND** — an unrelated project's instance answers on 5432; not adopted (`docs/33 §4.3`) | ❌ **BLOCKING P2** |
+| **PostgreSQL** (for this repository) | **16+** | **16.15**, installed at `C:\pg-inventory-system\`, port 5433 (`docs/33 §4.3`) | ✅ |
 
 **No downgrade.** SQL Server, MySQL, and Oracle are installed on this machine and are **not** substitutes. The specification depends on `xmin` concurrency (ADR-022), `ON CONFLICT … RETURNING` sequence allocation (ADR-025), `jsonb` audit payloads, range partitioning for 7-year retention, `pg_trgm` Arabic search, and `ar-x-icu` collation. None of these transfers to another engine.
 
@@ -197,6 +197,7 @@ Verified on `koshary`, 2026-09-10, by direct filesystem inspection (the device s
 | Frontend unit tests | `npm run test` | ✅ 3/3 passed |
 | Frontend production build | `npm run build` | ✅ Next.js 16.3.4, 3 static routes |
 | Toolchain (full) | manual equivalent of `verify-env.bat` v2, Run 2 | ✅ every §33 §6 command + all six `where` checks |
+| PostgreSQL connectivity, end to end | `dotnet run --project src/Inventory.Api`, then `curl http://localhost:5165/health/ready` | ✅ `Healthy` (200) — the running API genuinely reaches the new PostgreSQL instance via `PostgreSqlReadinessHealthCheck`'s raw `SELECT 1`. Previously expected to report `Unhealthy` (`docs/22 acceptance criteria`); now correctly `Healthy` since PostgreSQL is installed (§4). Process stopped cleanly afterward, port 5165 confirmed clear. |
 
 **Fixes applied to close the 4 build errors from the 2026-09-11 08:12 run** (`build-verification.log`):
 - `Program.cs:60` — `Request.Path.Value` null-coalesced to `string.Empty` before `IDiagnosticContext.Set` (CS8604).

@@ -58,15 +58,20 @@ The backend stack is **fully satisfied**. The Npgsql provider and `dotnet-ef` ar
 
 **Non-standard location — `PATH` fully settled (Run 2).** Node is installed at `D:\Nodejs`, not the default `C:\Program Files\nodejs`. Both `node` and `npm` are confirmed to resolve as bare commands (`where node` → `D:\Nodejs\node.exe`; `where npm` → `D:\Nodejs\npm`, `D:\Nodejs\npm.cmd`). No `PATH` edit was needed.
 
-### 4.3 Database — **MISSING**
+### 4.3 Database — **RESOLVED (2026-09-16)**
 
 | Component | Required | Installed | Status |
 | :--- | :--- | :--- | :---: |
-| **PostgreSQL** | **16+** | **NOT FOUND** | ❌ **MISSING — BLOCKING** |
+| **PostgreSQL** | **16+** | **16.15**, portable, dedicated to this repository | ✅ **INSTALLED** |
 
-**Searched and absent from:** `C:\Program Files`, `C:\Program Files (x86)`, `D:\Program Files`, `C:\` root, and `D:\` root, re-confirmed 2026-09-16. No `psql` binary resolves (`where psql` fails), and no PostgreSQL is installed *for this repository*.
+**Installed at `C:\pg-inventory-system\`, not under a `.local_postgres\` folder inside this repository, and on port `5433`, not the PostgreSQL default `5432`.** Both deviations were forced by facts discovered during installation — see `docs/19 §1` for the full explanation and rationale:
 
-**Run 2 finding — an unrelated PostgreSQL process is listening on port 5432, and must NOT be assumed usable.** `netstat` shows something bound to `127.0.0.1:5432` / `[::1]:5432`; the owning process (PID confirmed via `Get-Process`) is `postgres.exe` at `D:\Invetory management\.local_postgres\pgsql\bin\postgres.exe`, started 2026-09-10, serving data directory `D:\Invetory management\.local_postgres\data`. This is a **portable PostgreSQL instance belonging to a different project directory**, not this repository (`D:\سيستم المخازن`), left running from a prior session. Its host project's own README documents databases `inventory_dev` / `inventory_test` with the login `postgres` / `dev` — this repository's `appsettings.Development.json` expects a database named `restaurant_inventory` with `postgres` / `postgres`, which almost certainly does not exist on that instance. **This is flagged, not adopted** — see the conversation record for the open question raised to the project owner about the relationship between the two directories before anything in Phase 2 connects to any PostgreSQL instance found this way (ADR-027 requires the installed engine to be the intended one, not merely *an* engine answering on the expected port).
+1. This repository's root path (`D:\سيستم المخازن`) contains Arabic characters. PostgreSQL's Windows `initdb` fails to start from any non-ASCII path (its internal restricted-token re-exec mangles the path via an ANSI code page — reproduced directly: `invalid binary "D:\????? ???????\...": No such file or directory`). No subfolder of this repository is usable; the binaries and data directory were placed at the plain-ASCII `C:\pg-inventory-system\` instead.
+2. Port 5432 was already held by an unrelated project's own PostgreSQL instance (see the paragraph below) — untouched, per explicit project-owner instruction. This repository's instance uses port `5433` instead, configured in `postgresql.conf` and reflected in `appsettings.Development.json`.
+
+Database `restaurant_inventory` created; superuser password set to `postgres`, matching `appsettings.Development.json`. Confirmed reachable: `psql -h localhost -p 5433 -U postgres -d restaurant_inventory` connects; `\l` lists the database.
+
+**Context — the unrelated sibling instance on port 5432 (Run 2 finding, still true, still not touched).** `netstat` shows a separate process bound to `127.0.0.1:5432` / `[::1]:5432`: `postgres.exe` at `D:\Invetory management\.local_postgres\pgsql\bin\postgres.exe`, started 2026-09-10, serving data directory `D:\Invetory management\.local_postgres\data` — a portable PostgreSQL instance belonging to a different, unrelated project directory, not this repository. Per explicit project-owner direction (2026-09-16): leave it alone, install a fresh instance dedicated to this repository instead. That is what §4.3 above now describes; the sibling instance was never connected to or modified.
 
 **Other database engines are installed and are NOT substitutes.** The machine has Microsoft SQL Server (plus SSMS 22 and a `C:\SQL2025` directory), MySQL (standalone and inside a XAMPP installation at `D:\Installed apps`), and Oracle. **None of these may be used.** ADR-001 selected PostgreSQL deliberately, and the specification depends on PostgreSQL-specific behaviour that these engines do not provide:
 
@@ -259,7 +264,7 @@ Filesystem inspection — the method used for §4 — establishes *what is insta
 | `npm` on `PATH` | ✅ **CONFIRMED** | `where npm` → `D:\Nodejs\npm(.cmd)` |
 | Git | ✅ **CONFIRMED** | `git --version` → `2.47.0.windows.1` |
 | Docker | ⚠️ **CLI PRESENT, ENGINE NOT RUNNING** (reverses "absent from disk") | `docker --version` → `29.6.2`; `docker info` fails to reach the engine |
-| PostgreSQL (installed for this repo) | ❌ **STILL MISSING** — no `psql`, no engine under this repo's control | `where psql` fails; no PostgreSQL under any searched path |
+| PostgreSQL (installed for this repo) | ❌ Missing *at the time of Run 2* — no `psql` on `PATH`, no engine under this repo's control | `where psql` fails; no PostgreSQL under any searched path. **Superseded later the same day: see §4.3 — PostgreSQL 16.15 installed at `C:\pg-inventory-system\`, port 5433, reachable via its own `psql.exe`.** |
 | Port 5432 | ⚠️ **UNPLANNED — occupied by an unrelated project's instance** | See §4.3; not this repository's database, not assumed usable |
 
 ### 7.4 Run 2 Literal Output

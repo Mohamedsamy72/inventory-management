@@ -29,9 +29,9 @@ echo [PostgreSQL]
 where psql >nul 2>&1 && (
   for /f "delims=" %%v in ('psql --version') do echo   psql          : OK  %%v
 ) || echo   psql          : NOT INSTALLED  ^(required 16+ - see docs/33^)
-netstat -an | findstr /C:"127.0.0.1:5432" /C:"0.0.0.0:5432" >nul 2>&1 && (
-  echo   port 5432     : listening
-) || echo   port 5432     : not listening
+netstat -an | findstr /C:"127.0.0.1:5433" /C:"0.0.0.0:5433" >nul 2>&1 && (
+  echo   port 5433     : listening
+) || echo   port 5433     : not listening
 echo.
 
 echo [Backend API]
