@@ -16,8 +16,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Raw connectivity for the readiness probe.  No DbContext exists until Phase 2. -->
+    <!-- Raw connectivity for the readiness probe. -->
     <PackageReference Include="Npgsql" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
   </ItemGroup>
 
   <ItemGroup>

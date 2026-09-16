@@ -1,4 +1,8 @@
+using Inventory.Application.Common;
 using Inventory.Infrastructure.HealthChecks;
+using Inventory.Infrastructure.Persistence;
+using Inventory.Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -45,6 +49,11 @@ public static class DependencyInjection
                 instance: new PostgreSqlReadinessHealthCheck(connectionString),
                 failureStatus: HealthStatus.Unhealthy,
                 tags: [ReadinessTag]);
+
+        services.AddHttpContextAccessor();
+        services.AddScoped<ICurrentUserService, CurrentUserService>();
+
+        services.AddDbContext<InventoryDbContext>(options => options.UseNpgsql(connectionString));
 
         return services;
     }

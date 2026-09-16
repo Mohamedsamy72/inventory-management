@@ -9,6 +9,14 @@
 
   <PropertyGroup>
     <RootNamespace>Inventory.Domain</RootNamespace>
+    <!--
+      CA1711 assumes a "*Permission" suffix means a legacy CodeAccessPermission type and asks
+      for a rename. "Permission" is this domain's own ubiquitous-language term (docs/03, ADR-012)
+      for a catalogue entry like "items:create" - unrelated to code-access security. Renaming
+      Permission/RolePermission/UserPermission to dodge the analyzer would make the code less
+      clear, not more correct, so the rule is scoped off here rather than the type renamed.
+    -->
+    <NoWarn>$(NoWarn);CA1711</NoWarn>
   </PropertyGroup>
 
 </Project>

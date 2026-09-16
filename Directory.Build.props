@@ -27,6 +27,17 @@
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <InvariantGlobalization>false</InvariantGlobalization>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!--
+      NuGet's vulnerability audit (NU1900-NU1904) depends on reachability of nuget.org's service
+      index, unlike every other analyzer here which runs fully offline. On this machine that
+      lookup has repeatedly stalled for 3+ minutes and then failed outright DURING RESTORE
+      (before the build/analyzer phase even starts), which WarningsNotAsErrors cannot reach -
+      restore itself was failing, not a promoted warning. Disabled outright rather than left to
+      intermittently cost minutes per build on network flakiness unrelated to code quality.
+      Re-enable (remove NuGetAudit, keep the audit at Warning level) once this machine's
+      connectivity to nuget.org is confirmed reliable.
+    -->
+    <NuGetAudit>false</NuGetAudit>
   </PropertyGroup>
 
 </Project>

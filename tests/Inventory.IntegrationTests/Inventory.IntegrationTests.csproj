@@ -18,6 +18,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Inventory.Api\Inventory.Api.csproj" />
+    <!-- Direct access to InventoryDbContext for migration/schema verification (task 2.31).
+         CompositionRootRules only restricts src/Inventory.Api's own files from naming
+         Inventory.Infrastructure - it does not (and should not) restrict test projects, which
+         legitimately need deeper access than production code to verify persistence behaviour. -->
+    <ProjectReference Include="..\..\src\Inventory.Infrastructure\Inventory.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
