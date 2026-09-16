@@ -1,0 +1,56 @@
+# ---- .NET ----
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+artifacts/
+TestResults/
+*.trx
+*.coverage
+*.coverlet.json
+coverage*.xml
+
+# ---- Node / Next.js ----
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ---- Playwright ----
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# ---- Environment & secrets ----
+# Zero plaintext secrets in git (docs/20 section 2.1).
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+appsettings.*.local.json
+secrets.json
+
+# ---- Local database & runtime state ----
+.local_postgres/
+storage/
+logs/
+*.pid
+
+# ---- Verification logs (regenerated on demand, not source) ----
+env-verification.log
+build-verification.log
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+*.swp
+.idea/

@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+/*
+  Arabic-first, RTL-native foundations (docs/31 section 4.3).
+  The full design-token set and component layer arrive in Phase F1; Phase 1
+  establishes only direction, language and the base type stack.
+*/
+
+:root {
+  --font-arabic: 'Noto Sans Arabic', system-ui, -apple-system, sans-serif;
+  --font-latin: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+html {
+  direction: rtl;
+}
+
+body {
+  font-family: var(--font-arabic);
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+/*
+  Latin runs inside Arabic prose are isolated so punctuation does not invert.
+  Without this, ITM-000142 renders as 142-000-ITM (docs/31 section 4.4).
+*/
+.font-mono-code {
+  font-family: var(--font-latin);
+  direction: ltr;
+  unicode-bidi: isolate;
+}

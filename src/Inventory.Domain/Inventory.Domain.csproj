@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Inventory.Domain — pure business entities, value objects, invariants, exceptions.
+    DEPENDS ON NOTHING.  No EF Core, no ASP.NET Core, no Npgsql, no package reference
+    of any kind.  Enforced by LayeringRules.Domain_Depends_On_Nothing_External.
+    See docs/decision-log.md ADR-002.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Inventory.Domain</RootNamespace>
+  </PropertyGroup>
+
+</Project>

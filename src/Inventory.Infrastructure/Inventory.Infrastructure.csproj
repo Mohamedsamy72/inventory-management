@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Inventory.Infrastructure — persistence, identity, external services, health probes.
+    Depends on Application and Domain.  The Api reaches it only through the
+    composition root (AddInfrastructure), never by referencing its types directly
+    (ADR-002; enforced by LayeringRules).
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Inventory.Infrastructure</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Inventory.Application\Inventory.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Raw connectivity for the readiness probe.  No DbContext exists until Phase 2. -->
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+</Project>

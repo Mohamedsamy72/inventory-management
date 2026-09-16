@@ -1,0 +1,76 @@
+# ===========================================================================
+#  MOVE THIS FILE TO:  .github/workflows/ci.yml
+#
+#  It could not be written there directly: .github/workflows/ is a protected
+#  path that remote tooling is not permitted to write, which is a sensible
+#  guard - a CI definition is executable code with repository credentials.
+#  Move it manually (one command):
+#      mkdir .github\workflows  &&  move ci-workflow.yml .github\workflows\ci.yml
+# ===========================================================================
+
+name: CI
+
+# Phase 1, Task 1.17.
+# Every check here is also runnable locally via build-verify.bat, so CI never
+# becomes the only place the truth is known.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  NEXT_TELEMETRY_DISABLED: 1
+
+jobs:
+  backend:
+    name: Backend (build + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - run: dotnet restore InventorySystem.sln
+
+      # -warnaserror is deliberate: a nullable-reference warning in an inventory
+      # system is a future null balance (docs/09 section 8).
+      - run: dotnet build InventorySystem.sln --configuration Release --no-restore -warnaserror
+
+      - name: Unit tests
+        run: dotnet test tests/Inventory.UnitTests --configuration Release --no-build --verbosity normal
+
+      - name: Architecture tests
+        run: dotnet test tests/Inventory.ArchitectureTests --configuration Release --no-build --verbosity normal
+
+      - name: Integration tests
+        run: dotnet test tests/Inventory.IntegrationTests --configuration Release --no-build --verbosity normal
+
+  frontend:
+    name: Frontend (typecheck + lint + test + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test
+      - run: npm run build

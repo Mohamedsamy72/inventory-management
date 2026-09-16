@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Inventory.Application — use cases, commands, queries, DTOs, interfaces, validation.
+    Depends on Domain only.  Never on Infrastructure or Api (ADR-002).
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Inventory.Application</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Inventory.Domain\Inventory.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

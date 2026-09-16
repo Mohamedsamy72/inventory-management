@@ -1,0 +1,26 @@
+<Project>
+
+  <!--
+    MSBuild only auto-imports the NEAREST Directory.Build.props found by
+    walking up from the project file, so this file must explicitly pull in
+    the repository root's Directory.Build.props (TargetFramework,
+    Nullable, TreatWarningsAsErrors, etc.) before adding its own override -
+    otherwise test projects silently lose every root-level setting.
+  -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <!--
+    CA1707 ("remove underscores from member names") flags the
+    Method_Does_Thing naming convention xUnit tests use throughout this
+    repository (docs/09-implementation-plan.md Phase 1, task 1.6). That
+    convention is the correct one for test names and is not going to
+    change; scoping the rule off here is deliberate, not a relaxation of
+    quality standards. TreatWarningsAsErrors and every other analyzer
+    setting from the root Directory.Build.props remain in force.
+  -->
+
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+  </PropertyGroup>
+
+</Project>

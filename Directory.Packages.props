@@ -1,0 +1,42 @@
+<Project>
+
+  <!--
+    Central Package Management.  Every package version is declared exactly once,
+    here.  Project files reference packages WITHOUT a Version attribute.
+
+    Versions marked [cached] were confirmed present in the development machine's
+    NuGet cache during Phase 1 Task 1.1, so they restore offline.
+    See docs/33-verified-environment-matrix.md.
+  -->
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!--
+      Transitive pinning is deliberately OFF. Turning it on promotes every transitive
+      dependency to a top-level pinned reference, which fails restore unless each one
+      also has a PackageVersion entry here - a maintenance burden with no benefit at
+      this size, and an avoidable first-build failure mode.
+    -->
+    <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <ItemGroup Label="Runtime">
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />   <!-- [cached] -->
+    <PackageVersion Include="Npgsql" Version="10.0.3" />                          <!-- [cached] -->
+    <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />               <!-- restore from nuget.org -->
+  </ItemGroup>
+
+  <ItemGroup Label="Testing">
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />         <!-- [cached] -->
+    <PackageVersion Include="xunit" Version="2.9.3" />                            <!-- [cached] -->
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />        <!-- [cached] -->
+    <PackageVersion Include="NetArchTest.Rules" Version="1.3.2" />                <!-- [cached] -->
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.11" /><!-- [cached] -->
+    <!--
+      NOTE: FluentAssertions is deliberately ABSENT.  It is commercially licensed
+      from v8, and that decision belongs to the project owner (OD-012, CR-097).
+      Tests use xUnit's built-in assertions until it is decided, before Phase 7.
+    -->
+  </ItemGroup>
+
+</Project>

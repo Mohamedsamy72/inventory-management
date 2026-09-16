@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    Inventory.Api — thin HTTP host: middleware, endpoints, composition root.
+    References Infrastructure ONLY so that the composition root can register it.
+    No Infrastructure type may be used outside Program.cs (ADR-002).
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Inventory.Api</RootNamespace>
+    <UserSecretsId>inventory-api-3f2b1c7e-9a44-4d2f-8f1a-6b0c5d7e8a91</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Inventory.Infrastructure\Inventory.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Serilog.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Integration tests drive this host through WebApplicationFactory. -->
+    <InternalsVisibleTo Include="Inventory.IntegrationTests" />
+  </ItemGroup>
+
+</Project>
