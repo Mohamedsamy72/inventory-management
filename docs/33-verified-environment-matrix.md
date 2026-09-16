@@ -3,7 +3,7 @@
 > **Document ID:** SPEC-33
 > **Topic:** The actually-installed toolchain on the development machine, verified rather than assumed
 > **Status:** Authoritative — Living Register
-> **Verification date:** 2026-09-10
+> **Verification date:** 2026-09-10 (Run 1, partial), 2026-09-16 (Run 2, complete)
 > **Machine:** `koshary` — Windows (`win32`, `x64`)
 > **Governs:** ADR-027, OD-009 (closed)
 
@@ -43,7 +43,7 @@ Both are closed by Phase 1 Task 1.1, which runs the version commands directly on
 | **EF Core** | 10 | **10.0.11** (also 10.0.7, 10.0.5, 10.0.4, 10.0.3) | NuGet cache | ✅ **VERIFIED** (disk) |
 | **Npgsql.EntityFrameworkCore.PostgreSQL** | EF Core 10-compatible | **10.0.3** | NuGet cache | ✅ **VERIFIED** (disk) |
 | **`dotnet-ef` CLI** | matching EF Core | **10.0.3** | invoked as `dotnet ef` | ✅ **EXECUTED** |
-| **Git** | any | present | `C:\Program Files\Git` | ⚠️ command pending (Run 2) |
+| **Git** | any | **2.47.0.windows.1** | `C:\Program Files\Git` | ✅ **EXECUTED** (Run 2) |
 
 The backend stack is **fully satisfied**. The Npgsql provider and `dotnet-ef` are already in the local NuGet cache, so Phase 1 and Phase 2 can proceed without a package restore over the network.
 
@@ -52,11 +52,11 @@ The backend stack is **fully satisfied**. The Npgsql provider and `dotnet-ef` ar
 | Component | Required | Installed | Location | Status |
 | :--- | :--- | :--- | :--- | :---: |
 | **Node.js** | ≥ 20.9 (Next.js 16 minimum) | **v22.20.0** | `D:\Nodejs` | ✅ **EXECUTED** — inference confirmed exactly |
-| **npm** | bundled | **10.9.3** (from `npm/package.json`) | `D:\Nodejs\node_modules\npm` | ⚠️ command pending (Run 2) |
+| **npm** | bundled | **10.9.3** | `D:\Nodejs\node_modules\npm` | ✅ **EXECUTED** (Run 2) |
 
 **Inference resolved (Run 1).** `node --version` returned **`v22.20.0`** — the 22.x inference from bundled npm 10.9.3 and the binary's 2025-09-23 date was exactly right. The value is now read, not deduced.
 
-**Non-standard location — `PATH` partly settled.** Node is installed at `D:\Nodejs`, not the default `C:\Program Files\nodejs`. Run 1 proves **`node` resolves as a bare command**, because it executed as one. `npm` has not yet been exercised; it sits in the same directory, so it almost certainly resolves too — but "almost certainly" is not verification, and `where npm` in Run 2 settles it. If it does not resolve, the fix is a `PATH` entry, never a reinstall.
+**Non-standard location — `PATH` fully settled (Run 2).** Node is installed at `D:\Nodejs`, not the default `C:\Program Files\nodejs`. Both `node` and `npm` are confirmed to resolve as bare commands (`where node` → `D:\Nodejs\node.exe`; `where npm` → `D:\Nodejs\npm`, `D:\Nodejs\npm.cmd`). No `PATH` edit was needed.
 
 ### 4.3 Database — **MISSING**
 
@@ -64,7 +64,9 @@ The backend stack is **fully satisfied**. The Npgsql provider and `dotnet-ef` ar
 | :--- | :--- | :--- | :---: |
 | **PostgreSQL** | **16+** | **NOT FOUND** | ❌ **MISSING — BLOCKING** |
 
-**Searched and absent from:** `C:\Program Files`, `C:\Program Files (x86)`, `D:\Program Files`, `C:\` root, and `D:\` root. No portable or embedded PostgreSQL distribution was found, and no `.local_postgres` directory of the kind anticipated by `docs/19 §2.1` exists.
+**Searched and absent from:** `C:\Program Files`, `C:\Program Files (x86)`, `D:\Program Files`, `C:\` root, and `D:\` root, re-confirmed 2026-09-16. No `psql` binary resolves (`where psql` fails), and no PostgreSQL is installed *for this repository*.
+
+**Run 2 finding — an unrelated PostgreSQL process is listening on port 5432, and must NOT be assumed usable.** `netstat` shows something bound to `127.0.0.1:5432` / `[::1]:5432`; the owning process (PID confirmed via `Get-Process`) is `postgres.exe` at `D:\Invetory management\.local_postgres\pgsql\bin\postgres.exe`, started 2026-09-10, serving data directory `D:\Invetory management\.local_postgres\data`. This is a **portable PostgreSQL instance belonging to a different project directory**, not this repository (`D:\سيستم المخازن`), left running from a prior session. Its host project's own README documents databases `inventory_dev` / `inventory_test` with the login `postgres` / `dev` — this repository's `appsettings.Development.json` expects a database named `restaurant_inventory` with `postgres` / `postgres`, which almost certainly does not exist on that instance. **This is flagged, not adopted** — see the conversation record for the open question raised to the project owner about the relationship between the two directories before anything in Phase 2 connects to any PostgreSQL instance found this way (ADR-027 requires the installed engine to be the intended one, not merely *an* engine answering on the expected port).
 
 **Other database engines are installed and are NOT substitutes.** The machine has Microsoft SQL Server (plus SSMS 22 and a `C:\SQL2025` directory), MySQL (standalone and inside a XAMPP installation at `D:\Installed apps`), and Oracle. **None of these may be used.** ADR-001 selected PostgreSQL deliberately, and the specification depends on PostgreSQL-specific behaviour that these engines do not provide:
 
@@ -82,7 +84,7 @@ The backend stack is **fully satisfied**. The Npgsql provider and `dotnet-ef` ar
 
 | Component | Note |
 | :--- | :--- |
-| Docker | **Not installed.** Absent from `C:\Program Files` and `C:\Program Files (x86)` (checked 2026-09-10 and re-checked 2026-09-11). Optional — Testcontainers-based integration tests (`docs/18 §1`) require a container runtime. Without one, Phase 2 integration tests must target a local PostgreSQL instance with a dedicated test database instead. **Decided in Phase 2; not a Phase 1 blocker.** |
+| Docker | **Installed as of Run 2 (2026-09-16), contradicting the 2026-09-10/11 "absent from disk" finding.** `docker --version` → `29.6.2` (build `dfc4efb`); CLI at `C:\Users\User\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe` (Docker Desktop). **The engine is not currently running** — `docker info` fails with `failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`, i.e. the CLI is present but Docker Desktop itself has not been started. Optional — Testcontainers-based integration tests (`docs/18 §1`) require the engine, not just the CLI, to be running. **Decided in Phase 2; not a Phase 1 blocker.** |
 | Playwright browsers | Installed by `npx playwright install` during Phase T2. |
 
 ---
@@ -141,7 +143,7 @@ A tool present on disk is not necessarily invocable as a bare command. `where` i
 
 ## 7. Executed Verification Log
 
-**Status: 🔄 PARTIALLY EXECUTED — run 1 of 2. Four values confirmed; the run aborted on a defect in the runner script, since fixed.**
+**Status: ✅ FULLY EXECUTED — Run 1 (2026-09-11, partial) + Run 2 (2026-09-16, complete). Every §6 command and §6.2 `where` check now has literal, executed output. PostgreSQL remains the sole missing prerequisite; Docker's status changed from absent to present-but-not-running; one unplanned finding (an unrelated project's PostgreSQL instance occupying port 5432) is recorded in §4.3 and is explicitly not adopted.**
 
 ### 7.0 Run 1 — 2026-09-11 03:12 (`verify-env.bat` v1)
 
@@ -225,9 +227,9 @@ A directory under `sdk\` is not by itself a registered SDK — a partially remov
 
 **Consequence for `global.json`:** the pin remains correct and is now *better* founded — `10.0.302` is the only SDK present, so the pin documents reality rather than disambiguating a conflict. `rollForward: latestPatch` is retained so a servicing patch inside the `10.0.3xx` band is picked up without a file change. §8 edge case 1 is corrected accordingly.
 
-### 7.1 Run 2 — Pending
+### 7.1 Run 2 — Executed 2026-09-16
 
-`verify-env.bat` v2 is delivered and awaiting a run. It supplies the values Run 1 lost: `npm --version`, `psql --version`, `git --version`, `docker --version`, and all six §6.2 `where` checks.
+Run 2 executed. `verify-env.bat` v2 itself was not double-clicked (it ends in an interactive `pause`, unsuitable for the assisting session); every command it would have run was executed directly instead, and the literal output recorded in `env-verification.log` and §7.4 below. This supplies the values Run 1 lost: `npm --version`, `psql --version`, `git --version`, `docker --version`, and all six §6.2 `where` checks — plus one unplanned finding (§4.3) that none of those commands were designed to surface.
 
 ### 7.2 Earlier Blocker — Why a Script Was Needed At All
 
@@ -253,16 +255,52 @@ Filesystem inspection — the method used for §4 — establishes *what is insta
 | Node.js exact version | ✅ **CONFIRMED** | `node --version` → `v22.20.0` |
 | `node` on `PATH` | ✅ **CONFIRMED** | It ran as a bare command |
 | `dotnet` on `PATH` | ✅ **CONFIRMED** | It ran as a bare command |
-| npm version | ⛔ **PENDING** | Run 2 |
-| `npm` on `PATH` | ⛔ **PENDING** | Run 2 — `where npm` |
-| Git | ⛔ **PENDING** | Run 2 |
-| Docker | ⛔ **PENDING** (absent from disk) | Run 2 |
-| PostgreSQL | ⛔ **PENDING** (absent from disk) | Run 2 — failure expected |
+| npm version | ✅ **CONFIRMED** | `npm --version` → `10.9.3` |
+| `npm` on `PATH` | ✅ **CONFIRMED** | `where npm` → `D:\Nodejs\npm(.cmd)` |
+| Git | ✅ **CONFIRMED** | `git --version` → `2.47.0.windows.1` |
+| Docker | ⚠️ **CLI PRESENT, ENGINE NOT RUNNING** (reverses "absent from disk") | `docker --version` → `29.6.2`; `docker info` fails to reach the engine |
+| PostgreSQL (installed for this repo) | ❌ **STILL MISSING** — no `psql`, no engine under this repo's control | `where psql` fails; no PostgreSQL under any searched path |
+| Port 5432 | ⚠️ **UNPLANNED — occupied by an unrelated project's instance** | See §4.3; not this repository's database, not assumed usable |
 
 ### 7.4 Run 2 Literal Output
 
+See `env-verification.log` (repository root, regenerated on demand, gitignored per §9) for the full literal transcript. Summary of new values obtained:
+
 ```
-(awaiting execution of verify-env.bat v2)
+$ npm --version          -> 10.9.3
+$ psql --version         -> [not found; no psql on PATH or disk]
+$ git --version          -> git version 2.47.0.windows.1
+$ docker --version       -> Docker version 29.6.2, build dfc4efb
+
+$ where npm    -> D:\Nodejs\npm
+                  D:\Nodejs\npm.cmd
+$ where psql   -> INFO: Could not find files for the given pattern(s).
+$ where git    -> C:\Program Files\Git\mingw64\bin\git.exe
+                  C:\Program Files\Git\cmd\git.exe
+$ where docker -> C:\Users\User\AppData\Local\Programs\DockerDesktop\resources\bin\docker
+                  C:\Users\User\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe
+```
+
+Unplanned addition, outside the §6 command list — run because CLI presence does not confirm the engine is usable:
+
+```
+$ docker info
+...
+Server:
+failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine:
+check if the path is correct and if the daemon is running: open
+//./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.
+```
+
+And the port-5432 finding (§4.3), via `netstat -ano | findstr :5432` followed by a PID lookup:
+
+```
+TCP    127.0.0.1:5432   0.0.0.0:0   LISTENING   31848
+TCP    [::1]:5432       [::]:0      LISTENING   31848
+
+PID 31848 = D:\Invetory management\.local_postgres\pgsql\bin\postgres.exe
+            -D "D:/Invetory management/.local_postgres/data" -p 5432
+            (started 2026-09-10 11:35:18)
 ```
 
 ## 8. Edge Cases

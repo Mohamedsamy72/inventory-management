@@ -2,7 +2,7 @@
 
 > **Document ID:** SPEC-27
 > **Status:** Live Implementation Register
-> **Current State:** Phase 1 authored. Frontend **verified green**; backend **awaiting device-side build verification**.
+> **Current State:** **Phase 1 CLOSED (2026-09-16).** Backend `dotnet build -warnaserror` -> 0 errors, 0 warnings across all 7 projects; `dotnet test` -> 23/23 passing (2 unit, 13 architecture, 8 integration). Frontend verified green (typecheck, lint, 3/3 tests, production build). All 5 architecture-rule mechanisms proven by temporary deliberate violation. CI installed at `.github/workflows/ci.yml`. **Phase 2 is next and remains blocked on PostgreSQL — see §4 for a material update to that blocker's context, raised to the project owner and not yet resolved.**
 > **Plan Authority:** `docs/09-implementation-plan.md` (supersedes `docs/22-implementation-plan.md`).
 
 ---
@@ -22,7 +22,7 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | Phase | Description | Status | Blockers / Risks | Gate |
 | :--- | :--- | :---: | :--- | :---: |
 | **P0** | Documentation reconciliation & decision gate | ✅ **COMPLETE** | None. All product decisions closed (ADR-027 … ADR-030). | Awaiting approval |
-| **P1** | Solution architecture & infrastructure | 🔄 **AUTHORED — AWAITING VERIFICATION** | All 17 tasks authored. Frontend verified green (typecheck, lint, 3 tests, production build). **Backend build and tests not yet executed** — no .NET toolchain is reachable from the assisting session (`docs/33 §7.2`), so `build-verify.bat` must be run on the machine. CI workflow delivered but not installed (protected path). | Not signed off |
+| **P1** | Solution architecture & infrastructure | ✅ **COMPLETE** | All 17 tasks done and verified by executed command (§6.1, §9). Backend build/test executed directly on the machine (a working .NET toolchain is reachable — the `docs/33 §7.2` unreachable-toolchain note applied to an earlier assisting session, not this one). CI workflow installed at `.github/workflows/ci.yml`. | ✅ Signed off 2026-09-16 |
 | **P2** | Database foundation, tenancy, initial migration | ⛔ **BLOCKED** | **PostgreSQL 16+ is not installed** (`docs/33 §4.3`). No substitute permitted (ADR-027). Composite tenant FKs must be in the initial migration. | — |
 | **P3** | Authentication, sessions, CSRF, rate limiting | ⏳ Pending | Both OTP rate windows (ADR-026). | — |
 | **P4** | Authorization, scopes, role denial, **audit infrastructure** | ⏳ Pending | Audit must be transactional from the first mutation. | — |
@@ -55,7 +55,7 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 
 | Checkpoint | Covers | Status |
 | :---: | :--- | :---: |
-| **1** | Architecture & Database (P1–P2) | ⏳ Not reached |
+| **1** | Architecture & Database (P1–P2) | 🔄 Half reached — P1 signed off, P2 blocked (§4) |
 | **2** | Identity & Authorization (P3–P4, F1–F2) | ⏳ Not reached |
 | **3** | Master Data & Conversions (P5–P6, F3) | ⏳ Not reached |
 | **4** | Stock Engine & Receiving (P7–P8, F4) | ⏳ Not reached |
@@ -79,7 +79,9 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 
 | Blocker | Blocks | Requirement |
 | :--- | :--- | :--- |
-| **PostgreSQL 16+ not installed** | **P2 onward** | Install PostgreSQL 16 or later. SQL Server, MySQL, and Oracle are present on the machine and are **explicitly rejected** (ADR-027). |
+| **PostgreSQL 16+ not installed *for this repository*** | **P2 onward** | Install PostgreSQL 16 or later, or get explicit direction on the item below. SQL Server, MySQL, and Oracle are present on the machine and are **explicitly rejected** (ADR-027). |
+
+**Material update (2026-09-16, `docs/33 §4.3`/§7.4):** a PostgreSQL 16 process *is* running on `localhost:5432`, but it belongs to a separate, unrelated project directory (`D:\Invetory management`, not this repository) and was left running from a prior session on that other project. Its documented databases (`inventory_dev`/`inventory_test`, password `dev`) do not match this repository's expected database (`restaurant_inventory`, password `postgres`). **It has not been adopted or connected to.** This is raised to the project owner as an open question — not decided unilaterally — because connecting Phase 2 to an ambient database instance without confirming it is the intended one is exactly the kind of assumption ADR-027 exists to prevent. Until answered, PostgreSQL remains **not installed for this repository** and P2 remains blocked.
 
 ---
 
@@ -121,10 +123,10 @@ Before a phase may be declared complete:
 
 | Task | Description | Status | Note |
 | :--- | :--- | :---: | :--- |
-| **1.1** | Execute `docs/33 §6` verification; record literal output in `docs/33 §7` | 🔄 **PARTIAL** | Run 1 confirmed SDK `10.0.302`, runtimes `10.0.10`, `dotnet ef` `10.0.3`, Node `v22.20.0`, and that `dotnet`/`node` resolve on `PATH`. Run 1 aborted on a defect in the runner script (`docs/33 §7.0.2`); **v2 delivered, Run 2 pending** for npm, psql, git, docker and the `where` checks. |
+| **1.1** | Execute `docs/33 §6` verification; record literal output in `docs/33 §7` | ✅ **DONE** | Run 1 (2026-09-11, partial) + Run 2 (2026-09-16, complete). Every command and `where` check executed; literal output in `env-verification.log` and `docs/33 §7.4`. `psql` still fails as expected (PostgreSQL not installed for this repo — §4). |
 | **1.1a** | Pin SDK in `global.json` | ✅ **DONE** | `10.0.302`, `rollForward: latestPatch`. Confirmed by executed command; the "two SDKs" inference was **corrected** — only one is registered (`docs/33 §7.0.4`). |
-| **1.1b** | `PATH` resolution | 🔄 **PARTIAL** | `dotnet` and `node` **confirmed** on `PATH` — both ran as bare commands. `npm`, `git`, `psql`, `docker` pending Run 2. **No `PATH` change made**: none is needed for what is confirmed, and an edit without evidence would be a guess. |
-| **1.1c** | Container runtime check | ⚠️ **PARTIAL** | Docker **absent from disk** (both Program Files trees). `docker --version` in Run 2 confirms. Not a Phase 1 blocker; it decides the Phase 2 integration-test host. |
+| **1.1b** | `PATH` resolution | ✅ **DONE** | `dotnet`, `node`, `npm`, `git` all confirmed on `PATH` by Run 2 (`where` output in `docs/33 §7.4`). `psql` does not resolve (not installed). No `PATH` edit was needed. |
+| **1.1c** | Container runtime check | ✅ **DONE** | Docker Desktop **is installed** (`docker --version` -> `29.6.2`), reversing the 2026-09-10/11 "absent from disk" finding — but its engine is **not currently running** (`docker info` fails to reach `dockerDesktopLinuxEngine`). Not a Phase 1 blocker; decides the Phase 2 integration-test host once the engine is started. |
 | **1.2** | Solution with four source projects | ✅ **DONE** | `InventorySystem.sln`, 7 projects in `src/` and `tests/` folders. |
 | **1.3** | Dependency wiring | ✅ **DONE** | `Api → Infrastructure → Application → Domain`. Domain references nothing. |
 | **1.4** | `Directory.Build.props` | ✅ **DONE** | `net10.0`, nullable enabled, `TreatWarningsAsErrors`, deterministic builds. |
@@ -140,7 +142,7 @@ Before a phase may be declared complete:
 | **1.14** | OpenAPI, Development only | ✅ **DONE** | Document at `/openapi/v1.json`. Swagger **UI** deferred to Phase 3 (CR-098). |
 | **1.15** | Frontend scaffold | ✅ **DONE & VERIFIED** | Next.js 16.3.4, React 19, TypeScript, Tailwind 4. Typecheck, lint, 3 unit tests and production build **all green**. |
 | **1.16** | Local scripts | ✅ **DONE** | `run-local.bat`, `check-local.bat`, `stop-local.bat` + `StartupScriptRules` guard test. |
-| **1.17** | CI pipeline | ⚠️ **DELIVERED, NOT INSTALLED** | `.github/workflows/` is a protected path that remote tooling may not write. Content delivered as `ci-workflow.yml` at the repository root with move instructions. |
+| **1.17** | CI pipeline | ✅ **DONE** | Installed at `.github/workflows/ci.yml` (2026-09-16); the root-level `ci-workflow.yml` placeholder removed. Runs backend build/test and frontend typecheck/lint/test/build on push and PR to `main`. |
 
 ---
 
@@ -156,10 +158,10 @@ Verified on `koshary`, 2026-09-10, by direct filesystem inspection (the device s
 | EF Core | 10 | 10.0.11 (cached) | ✅ |
 | Npgsql EF Core provider | EF Core 10-compatible | 10.0.3 (cached) | ✅ |
 | `dotnet-ef` CLI | matching | 10.0.3 (global tool) | ✅ |
-| Node.js | ≥ 20.9 | present at `D:\Nodejs`; **22.x inferred** from npm 10.9.3 | ⚠️ |
-| npm | bundled | 10.9.3 | ✅ |
-| Git | any | present | ✅ |
-| **PostgreSQL** | **16+** | **NOT FOUND** | ❌ **BLOCKING P2** |
+| Node.js | ≥ 20.9 | `v22.20.0`, confirmed exactly by executed command | ✅ |
+| npm | bundled | `10.9.3`, confirmed by executed command | ✅ |
+| Git | any | `2.47.0.windows.1`, confirmed by executed command | ✅ |
+| **PostgreSQL** (for this repository) | **16+** | **NOT FOUND** — an unrelated project's instance answers on 5432; not adopted (`docs/33 §4.3`) | ❌ **BLOCKING P2** |
 
 **No downgrade.** SQL Server, MySQL, and Oracle are installed on this machine and are **not** substitutes. The specification depends on `xmin` concurrency (ADR-022), `ON CONFLICT … RETURNING` sequence allocation (ADR-025), `jsonb` audit payloads, range partitioning for 7-year retention, `pg_trgm` Arabic search, and `ar-x-icu` collation. None of these transfers to another engine.
 
@@ -180,42 +182,56 @@ Verified on `koshary`, 2026-09-10, by direct filesystem inspection (the device s
 
 ## 9. Phase 1 Verification Ledger
 
-**Phase 1 is NOT signed off.** Files exist; that is not the same thing as a phase being complete (`docs/09 §7`, item 17).
+**Phase 1 is SIGNED OFF (2026-09-16).** Every item below was executed directly on the machine, output observed, not inferred (`docs/09 §7`, item 17 — zero placeholders presented as complete).
 
 ### 9.1 Verified — executed, output observed
 
 | Check | Command | Result |
 | :--- | :--- | :---: |
+| Backend restore | `dotnet restore InventorySystem.sln` | ✅ all 7 projects |
+| Backend build | `dotnet build InventorySystem.sln -warnaserror` | ✅ 0 errors, 0 warnings (was 4 errors on 2026-09-11 — all fixed, see §6.1 note below) |
+| Backend tests | `dotnet test InventorySystem.sln` | ✅ 23/23 passing (2 unit, 13 architecture, 8 integration) |
+| Architecture tests proven by deliberate violation | 5 temporary probes, each built and run, each confirmed to FAIL, then reverted via `git checkout --` | ✅ all 5 confirmed real, not vacuous — see list below |
 | Frontend typecheck | `npm run typecheck` | ✅ clean |
-| Frontend lint | `npm run lint` | ✅ clean (after scoping the RTL rule — it was matching its own message strings) |
+| Frontend lint | `npm run lint` | ✅ clean |
 | Frontend unit tests | `npm run test` | ✅ 3/3 passed |
-| Frontend production build | `npm run build` | ✅ compiled in 6.8s, 3 static pages |
-| Toolchain (partial) | `verify-env.bat` Run 1 | ✅ SDK, runtimes, `dotnet ef`, Node |
+| Frontend production build | `npm run build` | ✅ Next.js 16.3.4, 3 static routes |
+| Toolchain (full) | manual equivalent of `verify-env.bat` v2, Run 2 | ✅ every §33 §6 command + all six `where` checks |
 
-These ran in the assisting session's Linux workspace on Node 22.22.2 / npm 10.9.7. The device has Node **v22.20.0** — same major, and `package-lock.json` is committed, so the dependency graph is identical. Re-running on the device confirms it.
+**Fixes applied to close the 4 build errors from the 2026-09-11 08:12 run** (`build-verification.log`):
+- `Program.cs:60` — `Request.Path.Value` null-coalesced to `string.Empty` before `IDiagnosticContext.Set` (CS8604).
+- `GlobalExceptionHandler.cs:62` — direct `_logger.LogError(...)` replaced with a `[LoggerMessage]` source-generated delegate (CA1848), the analyzer's own recommended fix, appropriate since this handler runs on every unhandled exception.
+- `DomainLayerContractTests.cs:22,34` — **not renamed** (the `Method_Does_Thing` xUnit convention is used across all four test projects). Added `tests/Directory.Build.props` scoping `CA1707` off for test projects only; it explicitly imports the root `Directory.Build.props` first, since MSBuild only auto-imports the *nearest* `Directory.Build.props` rather than chaining up automatically — a build-breaking discovery made and fixed while writing this file's first version (it briefly produced `error : Invalid framework identifier ''` for the whole test tree until the import was added).
 
-### 9.2 Not Verified — authored but never executed
+**Architecture rules proven by deliberate violation** (`docs/09` Phase 1 risk note — a rule that has never failed may be passing vacuously):
+
+| # | Violation introduced | Rule | Result |
+| :---: | :--- | :--- | :---: |
+| 1 | Temporary `Npgsql` package reference + usage added to `Inventory.Domain` | `LayeringRules.Domain_Must_Not_Reference_External_Technology` | ✅ Failed as expected |
+| 2 | `Inventory.Infrastructure` named in a non-`Program.cs` Api file (`CorrelationIdMiddleware.cs`) | `CompositionRootRules.Only_The_Composition_Root_May_Reference_Infrastructure` | ✅ Failed as expected |
+| 3 | `double` property added to a temporary Domain type | `ForbiddenPatternRules.Domain_Must_Not_Use_Float_Or_Double` | ✅ Failed as expected (caught field, property, and getter return type) |
+| 4 | Temporary generic `Repository<T>` type added to Domain | `ForbiddenPatternRules.No_Generic_Repository_Abstraction_May_Exist` | ✅ Failed as expected |
+| 5 | `DROP DATABASE` text added to a non-comment line in `run-local.bat` | `StartupScriptRules.Startup_Scripts_Must_Not_Contain_Destructive_Database_Commands` | ✅ Failed as expected |
+
+Every probe was reverted via `git checkout --` immediately after its failure was observed, and a full clean build + test run (23/23 passing) was re-confirmed afterward.
+
+### 9.2 Not Verified — out of Phase 1 scope
 
 | Check | Why not |
 | :--- | :--- |
-| `dotnet restore` | **No .NET toolchain is reachable.** The device has a working SDK but the session cannot execute there; the session's own workspace has no `dotnet`, and every Microsoft download host (`dot.net`, `aka.ms`, `packages.microsoft.com`, `api.nuget.org`) is blocked by egress policy — each was probed. |
-| `dotnet build -warnaserror` | Same. |
-| `dotnet test` (all three projects) | Same. |
-| Architecture tests proven by deliberate violation | Requires a passing build first. `docs/09` Phase 1 risk note requires this; it is **outstanding**. |
-| `run-local.bat` / `check-local.bat` / `stop-local.bat` | Windows batch; never executed. |
-| Playwright E2E | Requires a running frontend; scheduled for Phase T2. |
+| `run-local.bat` / `check-local.bat` / `stop-local.bat` end-to-end | Require PostgreSQL, which is not installed for this repository (§4). The scripts' *content* is verified by `StartupScriptRules`; their *execution* waits on Phase 2's database. |
+| Playwright E2E | Requires a running frontend against a real backend; scheduled for Phase T2. |
+| `/health/ready` returning `Healthy` | Expected and correct to report `Unhealthy`/`Degraded` — PostgreSQL is absent. `HealthEndpointTests` was written to accept either verdict for exactly this reason. |
 
-### 9.3 Package Restore Risk
+### 9.3 Package Restore
 
-Every .NET package version was pinned against the device's **actual NuGet cache**, so these restore offline: `Microsoft.AspNetCore.OpenApi` 10.0.11, `Npgsql` 10.0.3, `Microsoft.NET.Test.Sdk` 17.14.1, `xunit` 2.9.3, `xunit.runner.visualstudio` 3.1.4, `NetArchTest.Rules` 1.3.2, `Microsoft.AspNetCore.Mvc.Testing` 10.0.11.
+No restore risk remains outstanding: `dotnet restore InventorySystem.sln` succeeded for all 7 projects with the exact pinned versions in `Directory.Packages.props`, including `Serilog.AspNetCore` 9.0.0.
 
-**One package is not cached: `Serilog.AspNetCore` 9.0.0.** It needs a fetch from nuget.org on first restore. If the machine is offline, or if that version does not resolve, this is the check expected to fail first.
+### 9.4 Phase 1 Closure — Complete
 
-### 9.4 To Close Phase 1
-
-1. Run `verify-env.bat` (Run 2) — completes Task 1.1.
-2. Run `build-verify.bat` — exercises §9.2.
-3. Fix whatever the log reports; repeat.
-4. Move `ci-workflow.yml` → `.github/workflows/ci.yml`.
-5. Prove each architecture test with a temporary deliberate violation.
-6. Only then mark Phase 1 complete and sign off Checkpoint 1's Phase 1 half.
+1. ~~Run `verify-env.bat` (Run 2)~~ — done (manually, `verify-env.bat` itself ends in an interactive `pause` unsuitable for this session; every command it would run was executed directly and recorded in `env-verification.log` / `docs/33 §7.4`).
+2. ~~Run `build-verify.bat`~~ — done (same `pause` reason; every command it would run was executed directly; `build-verification.log` regenerated with `RESULT: ALL CHECKS PASSED`).
+3. ~~Fix whatever the log reports~~ — done, see the 4 fixes above.
+4. ~~Move `ci-workflow.yml` → `.github/workflows/ci.yml`~~ — done.
+5. ~~Prove each architecture test with a temporary deliberate violation~~ — done, see the table above.
+6. **Phase 1 marked complete; Checkpoint 1's Phase 1 half signed off.** Checkpoint 1's Phase 2 half remains open pending the PostgreSQL question in §4.

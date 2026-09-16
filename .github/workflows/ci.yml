@@ -1,13 +1,3 @@
-# ===========================================================================
-#  MOVE THIS FILE TO:  .github/workflows/ci.yml
-#
-#  It could not be written there directly: .github/workflows/ is a protected
-#  path that remote tooling is not permitted to write, which is a sensible
-#  guard - a CI definition is executable code with repository credentials.
-#  Move it manually (one command):
-#      mkdir .github\workflows  &&  move ci-workflow.yml .github\workflows\ci.yml
-# ===========================================================================
-
 name: CI
 
 # Phase 1, Task 1.17.
