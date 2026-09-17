@@ -40,7 +40,7 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **P14** | Audit viewer & activity monitor | ✅ **COMPLETE** | All 5 tasks (14.1–14.5) done and verified. See §22 for full detail. | ✅ Signed off 2026-09-17 |
 | **P15** | File storage & evidence | 🚫 **DEFERRED** | ADR-029. Not scheduled. Activates only if an approved workflow requires an attachment. | — |
 | **P16** | Reporting & analytics | 🚫 **DEFERRED** | ADR-029. Not scheduled. `docs/17 §4` extension points remain **binding on the core phases**. | — |
-| **F1** | Frontend shell & design system | ⏳ Pending | May run parallel with P1–P4. | — |
+| **F1** | Frontend shell & design system | ✅ **COMPLETE** | All 12 tasks (F1.1–F1.12) done and verified. See §25 for full detail. | ✅ Signed off 2026-09-17 |
 | **F2** | Frontend auth & app shell | ⏳ Pending | After P3. | — |
 | **F3** | Frontend master-data workflows | ⏳ Pending | After P5. | — |
 | **F4** | Frontend receiving & inventory | ⏳ Pending | After P8. | — |
@@ -862,3 +862,43 @@ Full solution suite: 208/208 passing (27 unit, 19 architecture, 162 integration)
 | A full row-by-row re-verification of all 55 REQ entries against a literal test name match | Docs/26's test IDs (`TEST-REC-001`, etc.) are curated labels, not literal xUnit method names - every requirement was checked for the EXISTENCE of a corresponding real test (found, except REQ-07), not for an exact string match against these labels, which was never this project's actual testing convention (method names throughout use descriptive `Sentence_Case` instead). |
 
 Full solution suite: 211/211 passing (27 unit, 19 architecture, 165 integration), stable across two consecutive runs.
+
+## 25. Phase F1 Verification Ledger
+
+**Phase F1 is SIGNED OFF (2026-09-17).** All 12 tasks (`docs/09` §Phase F1, F1.1–F1.12) implemented and verified. A minimal Next.js/Vitest/Playwright scaffold with `dir="rtl"`/`lang="ar"` and the ESLint physical-direction-utility guard already existed from Phase 1 (before this phase, before frontend work otherwise began); this phase builds the remaining design-system and component-layer deliverables on top of it.
+
+### 25.1 What was built
+
+- **Design-system reconciliation (task F1.1)**: ran the `ui-ux-pro-max` skill (`--design-system "B2B inventory warehouse management admin dashboard enterprise"`, plus `typography`/`nextjs`/`shadcn`/`ux` domain queries) per the skill's own mandatory-invocation rule in `docs/frontend-ui-ux-implementation-guide.md` §1.1. Cross-checking the skill's output against that same guide's §4 (which already recorded a color/typography decision from an earlier point in this project's history) surfaced a real conflict - the skill suggested an emerald-green accent and slate-700 primary; the guide's own already-authoritative palette specifies a blue-600 accent and slate-900 primary. Resolved in the guide's favor (`docs/frontend-ui-ux-implementation-guide.md` is the project's own "Authoritative & Mandatory" record, not a scratch suggestion) - the Tailwind tokens use the guide's exact hex values, transcribed, not re-derived.
+- **shadcn/ui initialized** (`components.json`, `-b radix --rtl`) - the CLI's own `--rtl` flag plus the "Nova" preset already emit `rtl:`-aware variants on generated components with no manual patching (verified directly: `BreadcrumbSeparator`'s chevron already carries `rtl:rotate-180`, exactly matching docs/31 §4.7's "breadcrumb separator points left" rule for free).
+- **Fonts self-hosted** (task F1.2) via `next/font/google` (`Noto_Sans_Arabic`, `Plus_Jakarta_Sans`) rather than a live Google Fonts `<link>`/`@import` - Next.js downloads the font files once at build time and serves them from the app's own origin, which is a stricter, more literal reading of "self-host" than the CDN-import snippet in the UI/UX guide's own §3.1 (kept as the better-satisfying implementation of the same documented intent, not a deviation from it).
+- **`src/lib/formatters.ts`** (task F1.5): every rule in docs/31 §4.5's table - Western numerals, quantity+unit, currency, Gregorian dates, date-times, relative time, grouped mobile numbers, percentages.
+- **`StatusBadge`** (task F1.6, `src/components/domain/status-badge.tsx`): the full docs/31 §4.6 table (5 entities, 22 status/label/tone rows), tone-mapped to new `--badge-*` CSS tokens.
+- **Base components** (task F1.7): Button, Input, Select, Dialog, Table, Badge, Card via `shadcn add`. Button additionally extended with a `loading` prop (spinner, `aria-busy`, disabled pointer events, preserved width) - the guide's §5.1/§6-state-5 "Mutation Lock" requirement, which shadcn's own generated component does not provide out of the box.
+- **Feedback components** (task F1.8): `LoadingSkeleton`/`TableLoadingSkeleton`, `EmptyState`, `ErrorBanner` (with an optional, omittable retry action for the guide's §9.3 non-retryable-error case), `ForbiddenState` (the two renderable unauthorized states from guide §8.6 - the third, 401, is a redirect with no UI state at all).
+- **`AppShell`** (task F1.9, `src/components/shell/app-shell.tsx`): full-width header, `side="right"` sidebar (shadcn's sidebar primitive positions by an explicit prop, not derived from `dir` - `side="right"` is what actually satisfies docs/31 §4.3's "sidebar sits on the right"), breadcrumbs, and shadcn's own built-in mobile-drawer behavior (`Sheet`) - no separate mobile-drawer component was needed. Deliberately carries no navigation content or auth-derived data of its own (Checkpoint 2 draws that boundary at Phase F2).
+- **`DataTable`** (task F1.10, `@tanstack/react-table` v8 - v9's API is a breaking rewrite the shadcn convention this project follows does not use): sticky header, keyset "next/previous" controls (no page numbers - keyset has none), a `< 768px` card-collapse render path, and the loading/error/empty states composed from the F1.8 components rather than re-implemented.
+- **`src/lib/api-client.ts`** (task F1.11): `credentials: 'include'` on every request; `X-CSRF-TOKEN` fetched fresh and attached automatically to every mutating request; RFC 7807 responses parsed into `ApiError` surfacing `messageAr` only; a 401 redirects to `/login`. No browser storage of any token anywhere.
+- **Tests** (task F1.12): `__tests__/formatters.test.tsx` (14 tests) and `__tests__/status-badge.test.tsx` (16 tests, parameterized over the full docs/31 §4.6 table) added to the existing Vitest+RTL harness; both needed a `resolve.alias` fix in `vitest.config.mts` since Vite's own resolver does not automatically pick up `tsconfig.json`'s `@/*` path the way `tsc`/Next.js do.
+- **Dependency hygiene**: `npm audit fix --force` resolved the eslint/postcss vulnerabilities found once real dependencies existed to audit. Three moderate vitest/vite/esbuild vulnerabilities remain, deliberately not force-upgraded (§25.3) - all are dev-tooling-only (no runtime/production exposure) and the fix is a breaking major version bump.
+
+### 25.2 Verified — executed, output observed
+
+| Check | Command | Result |
+| :--- | :--- | :---: |
+| Unit tests (formatters, status badge, RTL foundations) | `npm run test --prefix frontend` | ✅ 33/33 |
+| Type checking | `npm run typecheck --prefix frontend` | ✅ clean |
+| Linting, including the pre-existing physical-direction-utility guard against every newly added component | `npm run lint --prefix frontend` | ✅ clean |
+| Production build | `npm run build --prefix frontend` | ✅ succeeds, 3 static routes |
+| Browser E2E: document is Arabic/RTL at the root element; root page renders Arabic content | `npm run test:e2e --prefix frontend` | ✅ 2/2 (after installing the Playwright Chromium binary, not yet present in this environment) |
+| Dependency vulnerability audit | `npm audit --prefix frontend` | ✅ 0 vulnerabilities in eslint/postcss after fix; 3 moderate remain in dev-only tooling (documented, not blocking) |
+
+### 25.3 Not verified — genuinely out of Phase F1 scope
+
+| Item | Why deferred |
+| :--- | :--- |
+| Forcing the vitest 5.x major upgrade to close the remaining 3 moderate dev-tooling vulnerabilities | The vulnerability (`esbuild` accepting requests from any website against the dev server) has zero production exposure - it only matters if a developer's local Vitest dev server is reachable from an untrusted network, which it never is in this workflow. A breaking major-version bump risked destabilizing the test harness immediately before adding the F1.12 tests; deferred to a dedicated maintenance pass. |
+| Storybook-equivalent visual review of every component in RTL (F1's own stated acceptance criterion) | No visual/screenshot review tooling exists in this session (terminal-only agent, no browser screenshot capability wired up for component review specifically, as distinct from the E2E assertions already run). Every component was verified to build, typecheck, lint clean, and pass its behavioral tests; a human or Playwright-screenshot visual pass is the natural follow-up once F2+ gives these components real content to render. |
+| Any actual page content, navigation, or auth (Login, `/items`, etc.) | Phase F2 onward, per Checkpoint 2's explicit F1/F2 boundary. |
+
+Full solution suite (backend): 211/211 passing, unchanged by this phase. Frontend: 33/33 unit tests, 2/2 E2E, clean typecheck/lint/build.

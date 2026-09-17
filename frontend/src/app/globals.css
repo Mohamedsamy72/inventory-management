@@ -1,4 +1,10 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+/*
+  ---break---
+*/
+@custom-variant dark (&:is(.dark *));
 
 /*
   Arabic-first, RTL-native foundations (docs/31 section 4.3).
@@ -9,16 +15,82 @@
 :root {
   --font-arabic: 'Noto Sans Arabic', system-ui, -apple-system, sans-serif;
   --font-latin: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+
+  /*
+    Design system: "Swiss-Inspired Enterprise Minimalism" - the AUTHORITATIVE, already
+    -decided palette from docs/frontend-ui-ux-implementation-guide.md section 4 (the
+    project's binding UI/UX guide, reconciled from a ui-ux-pro-max skill run earlier in
+    this project's history). These values are transcribed from that document exactly,
+    not re-derived - it is the source of truth, this file is a consumer of it.
+  */
+  --background: #f8fafc;
+  /* surface.canvas */
+  --foreground: #0f172a;
+  /* brand.primary / slate-900, used as body text per the guide's Input spec */
+  --card: #ffffff;
+  /* surface.card */
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #0f172a;
+  /* brand.primary - slate-900 */
+  --primary-foreground: #ffffff;
+  --secondary: #334155;
+  /* brand.secondary - slate-700 */
+  --secondary-foreground: #ffffff;
+  --muted: #f1f5f9;
+  /* surface.hover - slate-100 */
+  --muted-foreground: #475569;
+  /* slate-600 */
+  --accent: #2563eb;
+  /* brand.accent - blue-600 */
+  --accent-foreground: #ffffff;
+  --destructive: #dc2626;
+  /* red-600 */
+  --destructive-foreground: #ffffff;
+  --border: #e2e8f0;
+  /* surface.border - slate-200 */
+  --input: #e2e8f0;
+  --ring: #3b82f6;
+  /* blue-500, matching section 7's focus-visible:ring-blue-500 exactly */
+  --chart-1: #2563eb;
+  --chart-2: #0f172a;
+  --chart-3: #334155;
+  --chart-4: #15803d;
+  --chart-5: #b45309;
+  --radius: 0.5rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #0f172a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f1f5f9;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: #3b82f6;
+
+  /*
+    Status-badge tones (docs/31 section 4.6, docs/frontend-ui-ux-implementation-guide.md
+    section 4's `status.*` tokens) - light background + dark text of the same hue, the
+    standard accessible badge pattern (every badge also carries its Arabic text, never
+    color alone). Blue and orange are this project's own additions - the guide's section
+    4 only names success/warning/danger/neutral, but docs/31 section 4.6 needs six tones.
+  */
+  --badge-neutral-bg: #f1f5f9;
+  --badge-neutral-fg: #475569;
+  --badge-blue-bg: #dbeafe;
+  --badge-blue-fg: #1d4ed8;
+  --badge-green-bg: #dcfce7;
+  --badge-green-fg: #15803d;
+  --badge-amber-bg: #fef3c7;
+  --badge-amber-fg: #b45309;
+  --badge-orange-bg: #ffedd5;
+  --badge-orange-fg: #c2410c;
+  --badge-red-bg: #fee2e2;
+  --badge-red-fg: #b91c1c;
 }
 
 html {
   direction: rtl;
-}
-
-body {
-  font-family: var(--font-arabic);
-  background-color: #f8fafc;
-  color: #0f172a;
 }
 
 /*
@@ -29,4 +101,133 @@ body {
   font-family: var(--font-latin);
   direction: ltr;
   unicode-bidi: isolate;
+}
+/*
+  ---break---
+*/
+@theme inline {
+  /*
+    The product is Arabic-only (docs/31 section 4.1) - one font family serves headings
+    and body throughout. Plus Jakarta Sans is reserved for isolated Latin runs only
+    (item codes, document numbers - see .font-mono-code), never for prose.
+  */
+  --font-heading: var(--font-arabic);
+  --font-sans: var(--font-arabic);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-badge-neutral-bg: var(--badge-neutral-bg);
+  --color-badge-neutral-fg: var(--badge-neutral-fg);
+  --color-badge-blue-bg: var(--badge-blue-bg);
+  --color-badge-blue-fg: var(--badge-blue-fg);
+  --color-badge-green-bg: var(--badge-green-bg);
+  --color-badge-green-fg: var(--badge-green-fg);
+  --color-badge-amber-bg: var(--badge-amber-bg);
+  --color-badge-amber-fg: var(--badge-amber-fg);
+  --color-badge-orange-bg: var(--badge-orange-bg);
+  --color-badge-orange-fg: var(--badge-orange-fg);
+  --color-badge-red-bg: var(--badge-red-bg);
+  --color-badge-red-fg: var(--badge-red-fg);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+/*
+  ---break---
+*/
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.145 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+
+  /* Dark-mode is not a stated product requirement (docs/31 is silent on it) - these exist
+     only so the tokens resolve if `.dark` is ever toggled, not as a designed variant. */
+  --badge-neutral-bg: oklch(0.269 0 0);
+  --badge-neutral-fg: oklch(0.87 0 0);
+  --badge-blue-bg: oklch(0.3 0.08 250);
+  --badge-blue-fg: oklch(0.85 0.08 250);
+  --badge-green-bg: oklch(0.3 0.08 150);
+  --badge-green-fg: oklch(0.85 0.08 150);
+  --badge-amber-bg: oklch(0.3 0.08 80);
+  --badge-amber-fg: oklch(0.85 0.08 80);
+  --badge-orange-bg: oklch(0.3 0.08 50);
+  --badge-orange-fg: oklch(0.85 0.08 50);
+  --badge-red-bg: oklch(0.3 0.1 25);
+  --badge-red-fg: oklch(0.85 0.1 25);
+}
+/*
+  ---break---
+*/
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
 }
