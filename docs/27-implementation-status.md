@@ -2,7 +2,7 @@
 
 > **Document ID:** SPEC-27
 > **Status:** Live Implementation Register
-> **Current State:** **Phase 1 and Phase 2 CLOSED (2026-09-16/17).** Backend `dotnet build -warnaserror` -> 0 errors, 0 warnings across all 7 projects; `dotnet test` -> 35/35 passing (2 unit, 17 architecture, 16 integration). Frontend verified green (typecheck, lint, tests, production build). The initial migration (33 entities, composite tenant FKs throughout, `xmin` concurrency, append-only triggers, `audit_logs` partitioning, the full docs/29 §5 index plan, role/permission seed data) applies cleanly to an empty database and is proven by real execution — not just review — against this repo's own PostgreSQL instance. **Phase 3 (Authentication) is next.**
+> **Current State:** **Phase 1, Phase 2 and Phase 3 CLOSED (2026-09-16/17).** Backend `dotnet build -warnaserror` -> 0 errors, 0 warnings across all 7 projects; `dotnet test` -> 52/52 passing (2 unit, 17 architecture, 33 integration). Frontend verified green (typecheck, lint, tests, production build). The initial migration (33 entities, composite tenant FKs throughout, `xmin` concurrency, append-only triggers, `audit_logs` partitioning, the full docs/29 §5 index plan, role/permission seed data) applies cleanly to an empty database and is proven by real execution — not just review — against this repo's own PostgreSQL instance. Phase 3 also fixed a critical, phase-independent bug in the tenant query filter introduced in Phase 2 — see §11.2 row 1; it affects every tenant-scoped query in the system, not just auth. **Phase 4 (Authorization, Scopes, Role Denial & Audit Infrastructure) is next.**
 > **Plan Authority:** `docs/09-implementation-plan.md` (supersedes `docs/22-implementation-plan.md`).
 
 ---
@@ -24,8 +24,8 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **P0** | Documentation reconciliation & decision gate | ✅ **COMPLETE** | None. All product decisions closed (ADR-027 … ADR-030). | Awaiting approval |
 | **P1** | Solution architecture & infrastructure | ✅ **COMPLETE** | All 17 tasks done and verified by executed command (§6.1, §9). Backend build/test executed directly on the machine (a working .NET toolchain is reachable — the `docs/33 §7.2` unreachable-toolchain note applied to an earlier assisting session, not this one). CI workflow installed at `.github/workflows/ci.yml`. | ✅ Signed off 2026-09-16 |
 | **P2** | Database foundation, tenancy, initial migration | ✅ **COMPLETE** | All 31 tasks (2.1–2.31) done and verified. See §9A for full detail. | ✅ Signed off 2026-09-17 |
-| **P3** | Authentication, sessions, CSRF, rate limiting | ⏳ **Next** | Both OTP rate windows (ADR-026). | — |
-| **P4** | Authorization, scopes, role denial, **audit infrastructure** | ⏳ Pending | Audit must be transactional from the first mutation. | — |
+| **P3** | Authentication, sessions, CSRF, rate limiting | ✅ **COMPLETE** | All 14 tasks (3.1–3.14) done and verified. See §11 for full detail. | ✅ Signed off 2026-09-17 |
+| **P4** | Authorization, scopes, role denial, **audit infrastructure** | ⏳ **Next** | Audit must be transactional from the first mutation. | — |
 | **P5** | Master data | ⏳ Pending | Gap-free concurrent code generation. | — |
 | **P6** | Unit conversion system | ⏳ Pending | Server-only factor resolution. | — |
 | **P7** | Stock engine, transactions, concurrency, idempotency | ⏳ Pending | `xmin` token; lock ordering; projected idempotency payloads. | — |
@@ -294,3 +294,63 @@ No restore risk remains outstanding: `dotnet restore InventorySystem.sln` succee
 ### 10.5 Environment note (unrelated to Phase 2 itself, discovered during it)
 
 The repository's NuGet vulnerability audit (`NU1900`-`NU1904`) began failing outright during `dotnet restore` on this machine — not a promoted warning, a hard restore failure, costing 3+ minutes per attempt before failing. `Directory.Build.props` now sets `<NuGetAudit>false</NuGetAudit>` with a comment explaining why and inviting re-enablement once connectivity to `nuget.org` is confirmed reliable. This is an environment reliability fix, not a security posture change: no vulnerability was found or ignored — the check simply could not reach its data source.
+
+---
+
+## 11. Phase 3 Verification Ledger
+
+**Phase 3 is SIGNED OFF (2026-09-17).** All 14 tasks (`docs/09` §Phase 3, table 3.1–3.14) implemented and verified against this repository's own PostgreSQL instance and a real in-process HTTP pipeline (`WebApplicationFactory<Program>`) — not by review alone.
+
+### 11.1 What was built
+
+- **ASP.NET Core Identity via `AddIdentityCore<User>()`** (the API-only variant) over a fully custom `IUserStore<User>` (`Inventory.Infrastructure.Identity.UserStore`) adapting the rich `User` domain entity — granular `IUserPasswordStore`/`IUserSecurityStampStore`/`IUserLockoutStore` interfaces, every mutation delegating to the entity's own domain methods, never reaching around them.
+- **Cookie authentication** registered explicitly under `IdentityConstants.ApplicationScheme` (required because `AddIdentityCore`, unlike `AddIdentity`, registers no scheme by itself) — `__Host-InventorySession`, `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`, 8-hour expiry, no sliding window, verified by direct cookie-header inspection of a real response (task 3.2).
+- **Security-stamp validation on every request** via `OnValidatePrincipal`, rejecting and signing out a principal whose stamp no longer matches (task 3.6).
+- **`POST /auth/login`** — `403 ACCOUNT_INACTIVE` checked before the password (task 3.3); `SignInManager.CheckPasswordSignInAsync(..., lockoutOnFailure: true)` incrementing/resetting `access_failed_count` and setting `lockout_end_at` through the custom lockout store (task 3.4); `POST /auth/logout` (task 3.5).
+- **CSRF**: `GET /auth/csrf-token` plus a custom `IEndpointFilter` (`AntiforgeryEndpointFilter`) calling `IAntiforgery.ValidateRequestAsync` explicitly on every mutating auth endpoint (task 3.7) — discovered during implementation that `app.UseAntiforgery()` alone validates nothing on minimal-API `MapPost` lambdas (no `IAntiforgeryMetadata` is attached by default), so the middleware-only approach docs/08 implies does not actually enforce anything without this filter.
+- **OTP password reset**: `ConsoleSmsSender`/`IOtpService` (dev-only, task 3.8) generating a cryptographically random 6-digit code (`RandomNumberGenerator.GetInt32`), SHA-256 hashed into `password_reset_otps`, 5-minute expiry, single-use (task 3.9); `POST /auth/forgot-password/otp|verify|reset`, rotating the security stamp on reset (task 3.10).
+- **Rate limiting** (task 3.11, ADR-026): login 5/IP/min, OTP 3/IP/15min (named `RateLimitPartition` policies, registered in `Inventory.Api` — `AddRateLimiter` only resolves in a Web SDK compile context, not the class-library `Inventory.Infrastructure`), plus the OTP per-mobile 3/15min **and** 5/hour dual window enforced explicitly inside the endpoint handler via `IOtpAttemptLimiter` (two independent `PartitionedRateLimiter<string>` instances, both must admit the request); general 300/user-or-IP/min global limiter.
+- **`GET /account/me`** (task 3.12) returning identity, the single role, warehouse/restaurant scopes, and the effective permission-code set (role baseline ∪ user grants − user denials — ADR-012 Role Denial itself is explicitly out of scope here, deferred to Phase 4's pipeline).
+- **CORS** restricted to the configured frontend origin, credentials allowed, no wildcard (task 3.13).
+- **14 new integration tests** across two deliberately separate classes — `AuthEndpointTests` (13, normal-flow behaviour) and `AuthRateLimitingTests` (4, budget-exhausting) — split because `WebApplicationFactory`'s rate-limiter/OTP-limiter singletons are shared by every test in one `IClassFixture`, and a budget-exhausting test would otherwise starve unrelated tests' login/OTP calls for the rest of the run (task 3.14).
+
+### 11.2 Bugs found and fixed during implementation — recorded, not silent
+
+| # | Bug | Root cause | Fix |
+| :--- | :--- | :--- | :--- |
+| 1 | **Critical, phase-independent**: tenant-scoped queries could silently read/write the wrong company's data, or find nothing for the right one, depending on which request happened to run first in the process | `InventoryDbContext.ApplyTenantFilter` (built in Phase 2) built the global query filter with `Expression.Constant(_currentUserService)` — embedding that ONE scoped service instance as a frozen literal. EF Core caches the compiled model (including query filters) once per context CLR type and reuses it for every later `InventoryDbContext` instance, including ones from a completely different request/DI scope — so every tenant-scoped query system-wide was silently using whichever `ICurrentUserService` existed when the model was first compiled, not the current request's. Confirmed directly: the generated SQL embedded `company_id = '<literal>'` as hardcoded text, not a `@parameter`. | Reference `this` (the `DbContext` instance) instead of the injected service — `this.TenantCompanyId`, a property on the context that reads `_currentUserService.CompanyId`. EF Core specifically recognizes and rebinds `this`-rooted member access in a query filter to the actual executing context instance at each query (the documented pattern for this exact scenario, see [EF Core docs — global query filters](https://learn.microsoft.com/ef/core/querying/filters)). Verified fixed: the same SQL now carries a `@__` parameter, and the full 52-test suite — run repeatedly, in different orders and groupings — is consistently green. |
+| 2 | `/forgot-password/verify` always returned `OTP_INVALID`, even with the correct code | `PasswordResetOtpService.VerifyAsync`'s own query lacked `.IgnoreQueryFilters()`. Called pre-authentication (same as login), `ICurrentUserService.CompanyId` reads `Guid.Empty` there, so the tenant filter hid the real row for every caller — collapsing `NotFound`/`Expired`/`Invalid` all into the same "nothing found" outcome. | Added `.IgnoreQueryFilters()`, matching the same documented pattern already applied twice in `UserStore` (`FindByNameAsync`, `FindByIdAsync`) for the identical pre-authentication reason. |
+| 3 | Login always returned `401` even with correct credentials | `UserStore.FindByNameAsync` had no `.IgnoreQueryFilters()`, so the pre-authentication tenant filter (`Guid.Empty`) excluded every real user. | Added `.IgnoreQueryFilters()` — resolving which tenant a mobile number belongs to is the entire point of this lookup. |
+| 4 | Every session was silently invalidated on the request immediately after login | `UserStore.FindByIdAsync`, called from `SignInManager.ValidateSecurityStampAsync` during `OnValidatePrincipal` — which runs *before* `HttpContext.User` is updated to the new principal — was also tenant-filtered to `Guid.Empty`. | Added `.IgnoreQueryFilters()`, safe here specifically because the id comes from a DataProtection-signed cookie ticket, not client input. |
+| 5 | `AccountProfile.Role` serialized as a raw integer (`"role":0`), not `"Owner"` | No `JsonStringEnumConverter` was registered for minimal API's JSON options. | Registered one globally via `ConfigureHttpJsonOptions` in `Program.cs`. |
+| 6 | CSRF validation silently did nothing on any minimal-API endpoint | `app.UseAntiforgery()` only validates endpoints carrying `IAntiforgeryMetadata`; nothing attaches that to a plain `MapPost` lambda. | Added `AntiforgeryEndpointFilter` (`IEndpointFilter` calling `IAntiforgery.ValidateRequestAsync` explicitly), applied to every mutating auth endpoint. |
+
+### 11.3 Verified — executed, output observed
+
+| Check | Command / Method | Result |
+| :--- | :--- | :---: |
+| Valid login issues the session cookie with every documented flag | `Valid_Login_Succeeds_And_Issues_The_Session_Cookie_With_The_Documented_Flags` | ✅ |
+| Invalid password / unknown mobile → `401 INVALID_CREDENTIALS` | `Invalid_Password_Returns_401_Invalid_Credentials`, `Unknown_Mobile_Number_Also_Returns_401_Invalid_Credentials` | ✅ |
+| Inactive account → `403 ACCOUNT_INACTIVE` before password check | `Inactive_Account_Returns_403_Account_Inactive` | ✅ |
+| 5 failed attempts lock the account out (`lockout_end_at` set, in the future) | `Repeated_Failures_Lock_The_Account_Out` | ✅ |
+| `GET /auth/csrf-token` returns a token and sets the pairing cookie | `Csrf_Token_Endpoint_Returns_A_Token_And_Sets_A_Pairing_Cookie` | ✅ |
+| A mutating request with no `X-CSRF-TOKEN` header is rejected | `Login_Without_A_Csrf_Token_Is_Rejected` | ✅ `400` |
+| OTP request always `200`, whether or not the mobile exists (no enumeration) | `Otp_Request_Always_Returns_200_Whether_Or_Not_The_Mobile_Exists` | ✅ |
+| Wrong OTP code → `400 OTP_INVALID` | `Otp_Verify_With_Wrong_Code_Returns_400_Otp_Invalid` | ✅ |
+| Full reset flow: verify → reset → old code rejected on reuse → new password logs in | `Otp_Full_Reset_Flow_Succeeds_With_The_Real_Code_And_The_Code_Cannot_Be_Reused` | ✅ |
+| Expired OTP rejected even with the correct code | `Otp_Expiry_Is_Rejected_Even_With_The_Correct_Code` | ✅ `400 OTP_EXPIRED` |
+| Logout invalidates the session (`/account/me` `200` before, `401` after) | `Logout_Then_Account_Me_Is_Unauthenticated` | ✅ |
+| `/account/me` returns identity, role, scopes and permission codes | `Account_Me_Returns_Identity_Role_Scopes_And_Permissions` | ✅ |
+| `/account/me` with no session → `401` | `Account_Me_Without_A_Session_Is_Unauthorized` | ✅ |
+| Login rate-limited to 5/IP/min | `Login_Is_Rate_Limited_To_Five_Per_Ip_Per_Minute` | ✅ `429` on the 6th |
+| OTP per-IP window (3/15min) trips | `Otp_Ip_Rate_Limit_Trips_After_Three_Requests_In_The_Window` | ✅ `429` on the 4th |
+| OTP per-mobile window (3/15min and 5/hour) trips | `Otp_Mobile_Rate_Limit_Trips_After_Three_Requests_In_Fifteen_Minutes` | ✅ `429` on the 4th |
+| Full solution suite, multiple consecutive runs (confirming the §11.2 row 1 fix under real ordering variance, not one lucky run) | `dotnet test InventorySystem.sln` | ✅ 52/52 (2 unit, 17 architecture, 33 integration), every run |
+
+### 11.4 Not verified — genuinely out of Phase 3 scope
+
+| Item | Why deferred |
+| :--- | :--- |
+| `localStorage` never used for the session | A frontend (F2) concern — no frontend code exists yet to violate this. The backend never issues a bearer token to store in the first place; only the `HttpOnly` cookie, which JavaScript cannot read regardless. |
+| ADR-012 Role Denial (`Admin` blocked from cost/audit permissions regardless of grant) | Explicitly Phase 4's pipeline-level handler (task 4.3), not this read-only `/account/me` projection — noted in `AccountProfileReader`'s own doc comment so the omission is never mistaken for an oversight. |
+| `docs/09`'s literal `--filter Category=Auth` verification command | No test in the repository (any phase) carries an xUnit `Category` trait yet — verification instead ran by fully-qualified class name, consistent with how Phase 1/2 were actually verified (§9/§10 use specific fact/class names, not category filters). Recorded as a pre-existing documentation/reality gap across all phases, not a Phase 3 regression. |

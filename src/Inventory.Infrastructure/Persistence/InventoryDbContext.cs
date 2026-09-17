@@ -78,17 +78,31 @@ public sealed class InventoryDbContext : DbContext
         }
     }
 
-    /// <summary>Builds `e => e.CompanyId == _currentUserService.CompanyId` for one entity type.
-    /// A closed-over service reference is intentional: the filter must re-evaluate per query,
-    /// not bake in the tenant at model-build time.</summary>
+    /// <summary>
+    /// EF Core's model (including every global query filter) is compiled once and cached per
+    /// context CLR type, then reused by every later <see cref="InventoryDbContext"/> instance -
+    /// including ones built by a completely different DI container/request. A filter built from
+    /// <c>Expression.Constant(_currentUserService)</c> freezes that ONE scoped service instance
+    /// into the shared cached model forever, so every subsequent request/tenant would silently
+    /// reuse the tenant of whichever request happened to compile the model first. Referencing
+    /// <c>this</c> (the context instance) instead is the documented pattern EF Core specifically
+    /// recognizes and rebinds to the actual executing context at each query
+    /// (https://learn.microsoft.com/ef/core/querying/filters) - so the filter is built against
+    /// this instance's own <see cref="TenantCompanyId"/> property, not the injected service.
+    /// </summary>
+    private Guid TenantCompanyId => _currentUserService.CompanyId;
+
+    /// <summary>Builds `e => e.CompanyId == this.TenantCompanyId` for one entity type - see
+    /// <see cref="TenantCompanyId"/> for why it must go through `this` and not a captured
+    /// service reference.</summary>
     private void ApplyTenantFilter<TEntity>(ModelBuilder modelBuilder)
         where TEntity : class, ITenantScopedEntity
     {
         ParameterExpression parameter = Expression.Parameter(typeof(TEntity), "e");
         MemberExpression companyIdProperty = Expression.Property(parameter, nameof(ITenantScopedEntity.CompanyId));
         MemberExpression currentCompanyId = Expression.Property(
-            Expression.Constant(_currentUserService),
-            nameof(ICurrentUserService.CompanyId));
+            Expression.Constant(this),
+            nameof(TenantCompanyId));
         BinaryExpression equals = Expression.Equal(companyIdProperty, currentCompanyId);
         Expression<Func<TEntity, bool>> lambda = Expression.Lambda<Func<TEntity, bool>>(equals, parameter);
 

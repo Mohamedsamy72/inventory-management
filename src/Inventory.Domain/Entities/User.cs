@@ -16,10 +16,16 @@ public sealed class User : Entity, ITenantScopedEntity
         ArgumentException.ThrowIfNullOrWhiteSpace(passwordHash);
         ArgumentException.ThrowIfNullOrWhiteSpace(securityStamp);
 
+        string normalizedMobileNumber = MobileNumberNormalizer.Normalize(mobileNumber);
+        if (normalizedMobileNumber.Length == 0)
+        {
+            throw new ArgumentException("Mobile number must contain at least one digit.", nameof(mobileNumber));
+        }
+
         Id = Guid.NewGuid();
         CompanyId = companyId;
         FullName = fullName;
-        MobileNumber = mobileNumber;
+        MobileNumber = normalizedMobileNumber;
         PasswordHash = passwordHash;
         SecurityStamp = securityStamp;
         IsActive = true;
@@ -60,14 +66,29 @@ public sealed class User : Entity, ITenantScopedEntity
         UpdatedAt = DateTimeOffset.UtcNow;
     }
 
-    public void RecordFailedLogin(int lockoutThreshold, TimeSpan lockoutDuration)
+    /// <summary>
+    /// Raw increment only - deciding whether the new count crosses the lockout threshold and
+    /// calling <see cref="SetLockoutEnd"/> belongs to the caller (docs/08 §1's "Reset Failed
+    /// Counter" step is orchestrated by ASP.NET Core Identity's UserManager against
+    /// IdentityOptions.Lockout, not by this entity - mirroring IUserLockoutStore's granular
+    /// shape rather than baking the threshold into the domain).
+    /// </summary>
+    public int IncrementAccessFailedCount()
     {
         AccessFailedCount++;
-        if (AccessFailedCount >= lockoutThreshold)
-        {
-            LockoutEndAt = DateTimeOffset.UtcNow.Add(lockoutDuration);
-        }
+        UpdatedAt = DateTimeOffset.UtcNow;
+        return AccessFailedCount;
+    }
 
+    public void ResetAccessFailedCount()
+    {
+        AccessFailedCount = 0;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    public void SetLockoutEnd(DateTimeOffset? lockoutEnd)
+    {
+        LockoutEndAt = lockoutEnd;
         UpdatedAt = DateTimeOffset.UtcNow;
     }
 

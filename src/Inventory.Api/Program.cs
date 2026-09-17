@@ -1,4 +1,6 @@
+using Inventory.Api.Features.Auth;
 using Inventory.Api.Middleware;
+using Inventory.Api.RateLimiting;
 using Inventory.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Serilog;
@@ -31,8 +33,19 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
 // ---- Services -------------------------------------------------------------
 builder.Services.AddInfrastructure(builder.Configuration);
 
+// Rate limiting (task 3.11) lives here, not in Inventory.Infrastructure's AddInfrastructure -
+// see Inventory.Api.RateLimiting.RateLimitingExtensions for why (AddRateLimiter only resolves
+// in a Web SDK compile context).
+builder.Services.AddInventoryRateLimiting();
+
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
+// Enums (e.g. AccountProfile.Role) serialize as their string name, not their ordinal - an
+// ordinal is an implementation detail and would silently break the moment a value is
+// inserted/reordered in the enum's declaration.
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
 // OpenAPI document only, and only in Development (docs/32 CR-098).
 // The interactive UI arrives in Phase 3 with the first real endpoints; a UI over
@@ -65,6 +78,20 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+
+// ---- Auth pipeline (Phase 3) ------------------------------------------------
+// Order matters: CORS before auth (a preflight must be answered before credentials are
+// evaluated); authentication before authorization; rate limiting after authentication, because
+// the "general" and "sensitive" policies partition on the authenticated user id when present
+// (Inventory.Api.RateLimiting.RateLimitingExtensions) and would otherwise never see it;
+// antiforgery last, so a request that will not even authenticate is not needlessly validated.
+app.UseCors(DependencyInjection.CorsPolicyName);
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseRateLimiter();
+app.UseAntiforgery();
+
+app.MapAuthEndpoints();
 
 // ---- Health probes (docs/32 CR-064) ---------------------------------------
 // Both are unauthenticated, so both disclose liveness and nothing else: no
