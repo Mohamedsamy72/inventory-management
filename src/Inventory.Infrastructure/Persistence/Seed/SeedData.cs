@@ -77,6 +77,14 @@ internal static class SeedData
         new(PermissionId(30), "users:view", "عرض المستخدمين", "users"),
         new(PermissionId(31), "users:manage", "إدارة المستخدمين", "users"),
         new(PermissionId(32), "users:scope", "تعيين النطاقات", "users"),
+
+        // Phase 12 (docs/09 §12.3-12.4) - not in docs/03 §3's original catalogue table, which has
+        // no dedicated "Discrepancies" module row; added here following the same practice as
+        // Phase 4's PrivilegeEscalationDenied/InvalidPassword (docs/13 §4: extend the catalogue
+        // as a real requirement needs a code), and recorded in docs/27 §20 as a deliberate
+        // addition.
+        new(PermissionId(33), "discrepancies:view", "عرض الفروقات", "discrepancies"),
+        new(PermissionId(34), "discrepancies:resolve", "حل الفروقات", "discrepancies"),
     ];
 
     private static readonly string[] OwnerCodes =
@@ -91,6 +99,7 @@ internal static class SeedData
         "costs:view", "valuation:view",
         "audit:view", "audit:export",
         "users:view", "users:manage", "users:scope",
+        "discrepancies:view", "discrepancies:resolve",
     ];
 
     private static readonly string[] AdminCodes =
@@ -106,6 +115,7 @@ internal static class SeedData
         // (ADR-012/ADR-006), so Admin never holds these regardless of what this seed does; they
         // are omitted here for clarity, not as the enforcement mechanism.
         "users:view", "users:manage", "users:scope",
+        "discrepancies:view", "discrepancies:resolve",
     ];
 
     private static readonly string[] WarehouseStaffCodes =
@@ -115,6 +125,7 @@ internal static class SeedData
         "supplies:view", "supplies:dispatch",
         "receiving:view", "receiving:create", "receiving:submit", "receiving:verify",
         "stock_counts:view", "stock_counts:count",
+        "discrepancies:view",
     ];
 
     private static readonly string[] RestaurantSupervisorCodes =
@@ -122,6 +133,7 @@ internal static class SeedData
         "items:view",
         "supply_requests:create", "supply_requests:view",
         "supplies:view", "supplies:confirm",
+        "discrepancies:view",
     ];
 
     public sealed record RolePermissionSeed(Guid RoleId, Guid PermissionId);

@@ -35,8 +35,8 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **P9** | Multi-item supply requests | ✅ **COMPLETE** | All 14 tasks (9.1–9.14) done and verified. See §17 for full detail. | ✅ Signed off 2026-09-17 |
 | **P10** | Fulfilment & dispatch | ✅ **COMPLETE** | All 8 tasks (10.1–10.8) done and verified. See §18 for full detail. | ✅ Signed off 2026-09-17 |
 | **P11** | Restaurant receipt confirmation | ✅ **COMPLETE** | All 11 tasks (11.1–11.11) done and verified. Highest-consequence module - see §19 for full detail. | ✅ Signed off 2026-09-17 |
-| **P12** | Discrepancies & reconciliation | ⏳ **Next** | Resolution must never post a movement. | — |
-| **P13** | Physical stock counts & adjustments | ⏳ Pending | In-transit exclusion (ADR-018); server-side blind counting. | — |
+| **P12** | Discrepancies & reconciliation | ✅ **COMPLETE** | All 7 tasks (12.1–12.7) done and verified. See §20 for full detail. | ✅ Signed off 2026-09-17 |
+| **P13** | Physical stock counts & adjustments | ⏳ **Next** | In-transit exclusion (ADR-018); server-side blind counting. | — |
 | **P14** | Audit viewer & activity monitor | ⏳ Pending | Owner-only, no grant path. | — |
 | **P15** | File storage & evidence | 🚫 **DEFERRED** | ADR-029. Not scheduled. Activates only if an approved workflow requires an attachment. | — |
 | **P16** | Reporting & analytics | 🚫 **DEFERRED** | ADR-029. Not scheduled. `docs/17 §4` extension points remain **binding on the core phases**. | — |
@@ -700,3 +700,36 @@ The repository's NuGet vulnerability audit (`NU1900`-`NU1904`) began failing out
 | The supervisor's "report to warehouse management" action and the resulting `StockUnavailableAtConfirmation` discrepancy (docs/30 §7.1 step 2) | Deliberately deferred to Phase 12 (Discrepancies & Reconciliation) - see §19.1's rationale. Task 11.10's own requirement (the confirmation failure behaves correctly) is fully met without it. |
 | A dedicated five-DISTINCT-line confirmation test (task 11.11's literal "five-line confirmation failing on one line") | The single-line depleted-balance test proves the identical rollback mechanism (`InsufficientStockException` -&gt; whole-transaction rollback) that a multi-line failure would also hit - `IStockPostingService.PostAsync` processes every line inside ONE transaction regardless of line count, so a 5-line variant exercises the same code path, not different code. A literal 5-line version is a reasonable first addition if this path is touched again. |
 | A frontend-driven confirmation workflow | Frontend phases (F1-F6) have not started this session. |
+
+## 20. Phase 12 Verification Ledger
+
+**Phase 12 is SIGNED OFF (2026-09-17).** All 7 tasks (`docs/09` §Phase 12, 12.1–12.7, ADR-021) implemented and verified over real HTTP. `Discrepancy` (Phase 2) already had the full `Open -> Investigating -> Resolved` lifecycle and all four types - this phase is the read/resolve surface over it, plus two gap fixes to earlier phases that this phase's own task list exposed.
+
+### 20.1 What was built
+
+- **Gap fix carried in from Phase 8**: task 8.5 explicitly required a `Discrepancy` (`DSC-` number) as part of receiving verification's transaction T2, alongside the ledger posting - this was missed during Phase 8 and only surfaced while reading Phase 12's task 12.7 ("variance auto-created by receiving verify AND by confirmation" - confirmation already did this in Phase 11, receiving verify did not). `ReceivingOrderService.VerifyAsync` now creates a `ReceivingVariance` `Discrepancy` for every non-zero reconciliation variance, in the same transaction as the ledger posting.
+- **`IDiscrepancyService`**: `GetAsync`/`ListAsync` (task 12.3's scoping applied in the service, not the endpoint - a discrepancy matches if either its `WarehouseId` is in the caller's authorized warehouse set or its `RestaurantId` is in the caller's authorized restaurant set, further restricted by an optional `DiscrepancyType` filter), `ResolveAsync` (task 12.4: requires a non-empty reason, is audited, and - task 12.5/ADR-021 - has NO path to `IStockPostingService` anywhere in the method; resolving a discrepancy can never move stock, only a physical stock count (Phase 13) can).
+- **New permissions, not in docs/03 §3's original catalogue** (`discrepancies:view`, `discrepancies:resolve`): the catalogue table has no "Discrepancies" module row at all - added following the same practice as Phase 4's `PrivilegeEscalationDenied`/`InvalidPassword`, recorded in docs/03 itself as a dated addition. Grants: Owner/Admin both permissions unrestricted; Warehouse Staff `view` only, scoped to their warehouses, every type; Restaurant Supervisor `view` only, scoped to their restaurants, `SupplyReceiptVariance` only (docs/03's own role narrative: "review receipt discrepancies," not receiving or stock-count variances, which have no restaurant side). **This required a new EF Core migration** (`AddDiscrepancyPermissions`) - permissions are seeded via `HasData()` baked into migrations, not applied dynamically at runtime, so adding rows to the C# seed arrays alone does nothing to a running database; this was caught immediately when every new test failed `403` despite correct authorization code, then fixed by generating and applying the migration.
+- **`DiscrepanciesEndpoints`**: `GET /discrepancies` (scoped per above), `GET /discrepancies/{id}` (same scope check, single-resource), `POST /discrepancies/{id}/resolve`.
+- **Test-infrastructure fix**: `appsettings.Development.json`'s connection string gained `Maximum Pool Size=300` (up from Npgsql's default 100). The full suite has been intermittently hitting Postgres connection-pool exhaustion under full-parallel-load since Phase 10 (documented in §18.2/§19.2 as pre-existing, unrelated flakiness) - by Phase 12 (144 integration tests across 17 classes, each with its own `WebApplicationFactory` host sharing one process-wide Npgsql pool keyed by connection string) it was failing roughly every other run. A pure capacity increase, no behavioural change; confirmed by three consecutive clean full-suite runs afterward where at least one of the previous four had failed.
+- **`DiscrepancyTests`** (task 12.7): 6 new integration tests over real HTTP.
+
+### 20.2 Verified — executed, output observed
+
+| Check | Command / Method | Result |
+| :--- | :--- | :---: |
+| A receiving-verify variance is listed via `GET /discrepancies` and resolvable | `DiscrepancyTests.Receiving_Verify_Variance_Is_Listed_And_Resolvable` | ✅ |
+| A confirmation variance is logged as `SupplyReceiptVariance`, visible to a scoped Restaurant Supervisor, and that supervisor CANNOT resolve it (only `discrepancies:resolve`-holding roles can) | `DiscrepancyTests.Confirmation_Variance_Is_Listed_As_SupplyReceiptVariance_Scoped_To_Restaurant_Supervisor` | ✅ |
+| Resolving writes an audit row (`DISCREPANCY_RESOLVED`) and the stock ledger row count is unchanged before/after (task 12.5's own risk) | `DiscrepancyTests.Resolving_Writes_Audit_And_No_Stock_Ledger_Row` | ✅ |
+| Resolving with an empty reason is rejected | `DiscrepancyTests.Resolving_Without_A_Reason_Is_Rejected` | ✅ |
+| Warehouse Staff sees nothing with no scope assigned, then sees the discrepancy once scoped to that warehouse | `DiscrepancyTests.Warehouse_Staff_Sees_Only_Their_Warehouses_Discrepancies` | ✅ |
+| Warehouse Staff cannot resolve even a discrepancy within their own scope (no `discrepancies:resolve` grant) | `DiscrepancyTests.Warehouse_Staff_Cannot_Resolve_Even_In_Scope` | ✅ |
+| Full solution suite, three consecutive clean runs after the connection-pool fix | `dotnet test` | ✅ 190/190 (27 unit, 19 architecture, 144 integration), every run |
+
+### 20.3 Not verified — genuinely out of Phase 12 scope
+
+| Item | Why deferred |
+| :--- | :--- |
+| `StockUnavailableAtConfirmation` discrepancy creation via the supervisor's "report to warehouse management" action (docs/30 §7.1 step 2) | Flagged as deferred to this phase back in §19.1/§19.3, but on closer reading this is its own distinct UI-initiated action (not auto-created by any existing transaction) with no dedicated endpoint task number anywhere in docs/09's Phase 12 list either - it is store/CRUD-equivalent to any other manually-raised discrepancy, which docs/09 does not scope as a Phase 12 deliverable. Left for a future phase or an explicit product decision on whether such a manual-raise endpoint is needed at all versus relying on Owner/Admin discovering `Dispatched` supplies stuck past their expected window through other means. |
+| `StockCountVariance` discrepancy creation | Phase 13's own job (Physical Stock Counts & Adjustments) - the count workflow that produces this variance type does not exist yet. |
+| A frontend-driven discrepancy review/resolution workflow | Frontend phases (F1-F6) have not started this session. |

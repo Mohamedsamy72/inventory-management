@@ -100,6 +100,7 @@ Permissions follow the standard syntax: `<module>:<action>`.
 | **Financials**<br>🔒 `NON_GRANTABLE` | `costs:view`<br>`valuation:view` | عرض التكاليف والأسعار<br>عرض تقييم المخزون | ✅<br>✅ | ⛔ **DENIED**<br>⛔ **DENIED** | ⛔ **DENIED**<br>⛔ **DENIED** | ⛔ **DENIED**<br>⛔ **DENIED** |
 | **Audit Log**<br>🔒 `NON_GRANTABLE` | `audit:view`<br>`audit:export` | عرض سجل التدقيق<br>تصدير سجل التدقيق | ✅<br>✅ | ⛔ **DENIED**<br>⛔ **DENIED** | ⛔ **DENIED**<br>⛔ **DENIED** | ⛔ **DENIED**<br>⛔ **DENIED** |
 | **Users & Scope** | `users:view`<br>`users:manage`<br>`users:scope` | عرض المستخدمين<br>إدارة المستخدمين<br>تعيين النطاقات | ✅<br>✅<br>✅ | ✅<br>✅<br>✅ | ❌<br>❌<br>❌ | ❌<br>❌<br>❌ |
+| **Discrepancies**<br>*(added Phase 12 - not in this table's original revision; see docs/27 §20)* | `discrepancies:view`<br>`discrepancies:resolve` | عرض الفروقات<br>حل الفروقات | ✅<br>✅ | ✅<br>✅ | ✅ (Scoped - own warehouses, every type)<br>❌ | ✅ (Scoped - own restaurants, `SupplyReceiptVariance` only)<br>❌ |
 
 ---
 

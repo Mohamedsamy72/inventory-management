@@ -114,6 +114,10 @@ public static class DependencyInjection
 
         // Phase 10: fulfilment & dispatch (docs/09 10.1-10.8, ADR-017). Zero stock effect.
         services.AddScoped<Application.Supplies.ISupplyService, Supplies.SupplyService>();
+
+        // Phase 12: discrepancies & reconciliation (docs/09 12.1-12.7, ADR-021). Resolution never
+        // posts a stock movement.
+        services.AddScoped<Application.Discrepancies.IDiscrepancyService, Discrepancies.DiscrepancyService>();
         services.AddHostedService<Idempotency.MaintenanceBackgroundService>();
         // Scoped, not Singleton: this handler depends on ICurrentUserService and
         // IPermissionEvaluator, both request-scoped. A Singleton registration here would repeat
