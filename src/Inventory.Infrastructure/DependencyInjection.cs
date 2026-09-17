@@ -121,6 +121,9 @@ public static class DependencyInjection
 
         // Phase 13: physical stock counts & adjustments (docs/09 13.1-13.11, ADR-018/020/021).
         services.AddScoped<Application.StockCounts.IStockCountService, StockCounts.StockCountService>();
+
+        // Phase 14: audit viewer & activity monitor (docs/09 14.1-14.5, ADR-013). Owner only.
+        services.AddScoped<Application.Audit.IAuditReaderService, Audit.AuditReaderService>();
         services.AddHostedService<Idempotency.MaintenanceBackgroundService>();
         // Scoped, not Singleton: this handler depends on ICurrentUserService and
         // IPermissionEvaluator, both request-scoped. A Singleton registration here would repeat

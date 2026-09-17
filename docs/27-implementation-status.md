@@ -37,7 +37,7 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **P11** | Restaurant receipt confirmation | ✅ **COMPLETE** | All 11 tasks (11.1–11.11) done and verified. Highest-consequence module - see §19 for full detail. | ✅ Signed off 2026-09-17 |
 | **P12** | Discrepancies & reconciliation | ✅ **COMPLETE** | All 7 tasks (12.1–12.7) done and verified. See §20 for full detail. | ✅ Signed off 2026-09-17 |
 | **P13** | Physical stock counts & adjustments | ✅ **COMPLETE** | All 11 tasks (13.1–13.11) done and verified. See §21 for full detail. | ✅ Signed off 2026-09-17 |
-| **P14** | Audit viewer & activity monitor | ⏳ **Next** | Owner-only, no grant path. | — |
+| **P14** | Audit viewer & activity monitor | ✅ **COMPLETE** | All 5 tasks (14.1–14.5) done and verified. See §22 for full detail. | ✅ Signed off 2026-09-17 |
 | **P15** | File storage & evidence | 🚫 **DEFERRED** | ADR-029. Not scheduled. Activates only if an approved workflow requires an attachment. | — |
 | **P16** | Reporting & analytics | 🚫 **DEFERRED** | ADR-029. Not scheduled. `docs/17 §4` extension points remain **binding on the core phases**. | — |
 | **F1** | Frontend shell & design system | ⏳ Pending | May run parallel with P1–P4. | — |
@@ -766,3 +766,34 @@ The repository's NuGet vulnerability audit (`NU1900`-`NU1904`) began failing out
 | :--- | :--- |
 | Idempotent-replay test for `approve` (same key posts the adjustment exactly once) | The identical same-transaction recording pattern is already verified end-to-end in Phase 8 (`ReceivingOrderTests.Idempotent_Resubmit_...`) and Phase 11 (`SupplyConfirmationTests.Idempotent_Replay_...`) against the exact same code path (`SaveWithIdempotencyAsync`-equivalent logic); a dedicated Phase 13 case would exercise no new code. A reasonable first addition if this exact method is touched again. |
 | A frontend-driven stock-count workflow | Frontend phases (F1-F6) have not started this session. |
+
+## 22. Phase 14 Verification Ledger
+
+**Phase 14 is SIGNED OFF (2026-09-17).** All 5 tasks (`docs/09` §Phase 14, 14.1–14.5, ADR-013) implemented and verified over real HTTP. A read-only surface over the audit trail Phase 4 already writes to - Owner-only, no grant path, and that guarantee needed zero new code here since `PermissionAuthorizationHandler`'s role-denial check (task 4.8) already covers `audit:view`/`audit:export` unconditionally.
+
+### 22.1 What was built
+
+- **`IAuditReaderService`**: `ListAsync` (task 14.1, filterable by actor/entity type/date range, keyset-paginated), `ListActivityAsync` (task 14.2, a reduced `AuditActivitySummary` projection - Arabic description, actor role, result, timestamp - with no entity ids or old/new-value JSON, the genuinely human-readable stream), `ExportAsync` (task 14.4, identical data to `ListAsync` but writes its own `AUDIT_LOG_EXPORTED` audit entry, saved directly since export has no other business transaction to ride along with).
+- **Bounded default date window** (task 14.3, docs/17 §1.3): when the caller supplies no `from`, the query defaults to the last 30 days rather than scanning the whole table - applied inside the service's shared query builder, not duplicated across the three methods.
+- **`AuditEndpoints`**: `GET /audit`, `GET /audit/activity`, `GET /audit/export` - `audit:view` gates the first two, `audit:export` (a distinct, also-`NON_GRANTABLE` code) gates the third, exactly matching docs/03's separate permission codes for viewing versus exporting.
+- **`AuditReaderTests`** (task 14.5): 6 new integration tests over real HTTP, including one that deliberately inserts a bypass `user_permissions` grant row directly (exactly as Phase 4's own `AuthorizationTests.Role_Denial_Overrides_A_Non_Grantable_Permission_...` already proved at the raw `IAuthorizationService` layer) to confirm the REAL `GET /audit` endpoint is still denied end-to-end, not merely at the grant-time guard.
+
+### 22.2 Verified — executed, output observed
+
+| Check | Command / Method | Result |
+| :--- | :--- | :---: |
+| Owner sees audit entries spanning multiple modules (category creation, warehouse creation) in one list; the activity stream responds `200` | `AuditReaderTests.Owner_Sees_Audit_Entries_From_Multiple_Modules` | ✅ |
+| Admin gets `403` on `GET /audit`, `GET /audit/activity`, AND `GET /audit/export` | `AuditReaderTests.Admin_Gets_403_On_View_And_Export` | ✅ |
+| A stray `user_permissions` grant row for `audit:view`, inserted directly (bypassing the grant-time guard on purpose), still yields `403` at the real HTTP endpoint | `AuditReaderTests.A_Stray_Grant_Row_For_Audit_View_Still_Yields_403_At_The_Real_Endpoint` | ✅ |
+| Creating a user with a known plaintext password never leaves that literal string anywhere in `old_values`/`new_values` across the entire audit trail (a real end-to-end check of `AuditSanitizer`'s wiring, not a synthetic unit test of the sanitizer alone - `AuditSanitizer` is `internal` and has no direct test coverage of its own, so this is the only test that actually exercises it) | `AuditReaderTests.No_Password_Value_Ever_Appears_In_Any_Audit_Row` | ✅ |
+| Calling export writes its own `AUDIT_LOG_EXPORTED` entry, itself visible on the next list call | `AuditReaderTests.Export_Writes_Its_Own_Audit_Entry` | ✅ |
+| An explicit `from`/`to` range excludes a row created outside it | `AuditReaderTests.Date_Range_Filter_Excludes_Rows_Outside_The_Window` | ✅ |
+| Full solution suite, two consecutive clean runs | `dotnet test` | ✅ 203/203 (27 unit, 19 architecture, 157 integration), every run |
+
+### 22.3 Not verified — genuinely out of Phase 14 scope
+
+| Item | Why deferred |
+| :--- | :--- |
+| "Every phase's mutations are present in the trail" (task 14.5's literal wording) as an exhaustive, all-phases assertion | Every phase 5-13 service already calls `IAuditLogger.Record` for its own mutations (confirmed by direct source inspection - 12 services do), and this phase's own test confirms at least two distinct modules' entries are queryable together; a single test asserting literally every action code from every phase in one list would be a large, low-marginal-value enumeration rather than a meaningful new check. |
+| A CSV/binary export format | Phase 14's `ExportAsync` returns the same JSON shape as `ListAsync` - no file-generation pipeline exists (Phase 15/17 both deferred, ADR-029), and docs/09's task 14.4 asks only that export be a distinct, audited act, not a specific file format. |
+| A frontend-driven audit viewer | Frontend phases (F1-F6) have not started this session. |

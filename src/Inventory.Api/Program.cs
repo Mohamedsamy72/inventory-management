@@ -1,3 +1,4 @@
+using Inventory.Api.Features.Audit;
 using Inventory.Api.Features.Auth;
 using Inventory.Api.Features.MasterData;
 using Inventory.Api.Features.Discrepancies;
@@ -115,6 +116,7 @@ app.MapSupplyRequestsEndpoints();
 app.MapSuppliesEndpoints();
 app.MapDiscrepanciesEndpoints();
 app.MapStockCountsEndpoints();
+app.MapAuditEndpoints();
 
 // ---- Health probes (docs/32 CR-064) ---------------------------------------
 // Both are unauthenticated, so both disclose liveness and nothing else: no
