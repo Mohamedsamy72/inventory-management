@@ -93,11 +93,16 @@ async function request<T>(path: string, init: RequestInit = {}, skipAuthRedirect
     );
   }
 
-  if (response.status === 204) {
+  // 204 is the documented empty-body status, but several endpoints (e.g. login: `Results.Ok()`
+  // with no value) return 200 with an equally empty body - `.json()` on that throws a raw
+  // SyntaxError instead of the intended success, so check for actual content first rather than
+  // trusting the status code alone.
+  const text = await response.text();
+  if (text === '') {
     return undefined as T;
   }
 
-  return (await response.json()) as T;
+  return JSON.parse(text) as T;
 }
 
 export interface RequestOptions {
