@@ -48,6 +48,13 @@ internal static class ErrorCodes
     public const string IdempotencyKeyRequired = "IDEMPOTENCY_KEY_REQUIRED";
     public const string IdempotencyKeyReuse = "IDEMPOTENCY_KEY_REUSE";
 
+    // Phase 8 (docs/30, docs/04 §18) - all already in docs/13's original catalogue.
+    public const string InsufficientStock = "INSUFFICIENT_STOCK";
+    public const string InvalidStateTransition = "INVALID_STATE_TRANSITION";
+    public const string EmptyDocument = "EMPTY_DOCUMENT";
+    public const string ConcurrencyConflict = "CONCURRENCY_CONFLICT";
+    public const string FinancialAccessDenied = "FINANCIAL_ACCESS_DENIED";
+
     public static string ArabicMessageFor(string code) => code switch
     {
         InvalidCredentials => "رقم الجوال أو كلمة المرور غير صحيحة.",
@@ -69,6 +76,11 @@ internal static class ErrorCodes
         InvalidConversionFactor => "معامل التحويل يجب أن يكون قيمة موجبة أكبر من الصفر.",
         IdempotencyKeyRequired => "مفتاح منع التكرار مطلوب لهذه العملية.",
         IdempotencyKeyReuse => "تم استخدام مفتاح منع التكرار هذا لعملية مختلفة.",
+        InsufficientStock => "الرصيد المتاح في المستودع غير كافٍ لإتمام العملية.",
+        InvalidStateTransition => "لا يمكن تغيير حالة المستند من حالته الحالية.",
+        EmptyDocument => "يجب أن يحتوي المستند على صنف واحد على الأقل.",
+        ConcurrencyConflict => "تم تعديل السجل بواسطة مستخدم آخر، يرجى تحديث الصفحة والمحاولة مجدداً.",
+        FinancialAccessDenied => "غير مصرح لك بالاطلاع على التكاليف والبيانات المالية.",
         _ => throw new ArgumentOutOfRangeException(nameof(code), code, "Unknown error code."),
     };
 
@@ -93,6 +105,11 @@ internal static class ErrorCodes
         InvalidConversionFactor => "Conversion factor must be positive.",
         IdempotencyKeyRequired => "Idempotency key is required.",
         IdempotencyKeyReuse => "Key already used for a different request.",
+        InsufficientStock => "Available warehouse stock is insufficient.",
+        InvalidStateTransition => "Document cannot transition from current state.",
+        EmptyDocument => "Document must contain at least one line.",
+        ConcurrencyConflict => "Record was modified by another user.",
+        FinancialAccessDenied => "Financial data access is restricted to Owner.",
         _ => throw new ArgumentOutOfRangeException(nameof(code), code, "Unknown error code."),
     };
 }

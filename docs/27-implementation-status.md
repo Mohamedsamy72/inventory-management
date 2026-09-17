@@ -31,8 +31,8 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **P5** | Master data | ✅ **COMPLETE** | All 16 tasks (5.1–5.16) done and verified. See §13 for full detail. | ✅ Signed off 2026-09-17 |
 | **P6** | Unit conversion system | ✅ **COMPLETE** | All 8 tasks (6.1–6.8) done and verified. See §14 for full detail. | ✅ Signed off 2026-09-17 |
 | **P7** | Stock engine, transactions, concurrency, idempotency | ✅ **COMPLETE** | All 15 tasks (7.1–7.15) done and verified. No business endpoint exposed (by design). See §15 for full detail. | ✅ Signed off 2026-09-17 |
-| **P8** | Receiving & warehouse stock ledger | ⏳ **Next** | Reconciliation must post the delta, never the full actual. | — |
-| **P9** | Multi-item supply requests | ⏳ Pending | Unblocked — OD-008 closed (ADR-028). Warehouse derived server-side; over-post security test mandatory. | — |
+| **P8** | Receiving & warehouse stock ledger | ✅ **COMPLETE** | All 13 tasks (8.1–8.13) done and verified. See §16 for full detail. | ✅ Signed off 2026-09-17 |
+| **P9** | Multi-item supply requests | ⏳ **Next** | Unblocked — OD-008 closed (ADR-028). Warehouse derived server-side; over-post security test mandatory. | — |
 | **P10** | Fulfilment & dispatch | ⏳ Pending | Must write zero ledger rows. | — |
 | **P11** | Restaurant receipt confirmation | ⏳ Pending | Only stock-deducting path; all-or-nothing per document. | — |
 | **P12** | Discrepancies & reconciliation | ⏳ Pending | Resolution must never post a movement. | — |
@@ -558,3 +558,40 @@ The repository's NuGet vulnerability audit (`NU1900`-`NU1904`) began failing out
 | `IdempotencyMiddleware`/`IStockPostingService`/`IUnitConversionResolver` exercised through a real HTTP endpoint | Docs/09 is explicit: "No business endpoint is exposed in this phase." Every piece is verified directly against the service/database; Phase 8's receiving endpoints are the first real HTTP callers. |
 | `400 IDEMPOTENCY_KEY_REQUIRED` / `409 IDEMPOTENCY_KEY_REUSE` as actual HTTP responses | Same reason - no endpoint calls `.RequireIdempotencyKey()` yet. |
 | The literal docs/09 task 7.15 "interleaved multi-item deadlock probe" at production-realistic scale (many concurrent multi-line confirmations) | The 2-caller/2-item probe implemented here (§15.2) proves the lock-ordering mechanism is correct in principle - the first real multi-line, multi-item transaction (Phase 11's receipt confirmation) is where a larger-scale probe becomes meaningful, since Phase 7 has no multi-line business operation of its own to stress. |
+
+## 16. Phase 8 Verification Ledger
+
+**Phase 8 is SIGNED OFF (2026-09-17).** All 13 tasks (`docs/09` §Phase 8, 8.1–8.13) implemented and verified end-to-end over real HTTP against this repository's own PostgreSQL instance - the first business endpoints built this session, and the first real consumers of `IStockPostingService`, `IScopeGuard`, `IFinancialProjection`, and `.RequireIdempotencyKey()`.
+
+### 16.1 What was built
+
+- **`IReceivingOrderService`/`ReceivingOrderService`** (tasks 8.1-8.8): orchestrates the `ReceivingOrder`/`ReceivingOrderItem` state machine already built in Phase 2 - `CreateDraftAsync` allocates a `REC-` number (`IDocumentSequenceService`, matching Phase 5's pattern); `AddLineAsync` resolves the base quantity via `ItemUnitConversions` and calls `SetPostedCost` at line-add time (the design decision: cost is captured when a line is entered, not deferred to submit); `SubmitAsync` (T1) posts `INCOMING_POSTED` per line at the *expected* quantity; `VerifyAsync` (T2) posts `INCOMING_RECONCILIATION` for the **delta only** (`actual − expected`), valued at that line's own `unit_cost` (ADR-020) - never the full actual quantity, which docs/09 flags as the single most likely defect in the product; `ReverseAsync` (T3) drives the currently-posted net quantity per line back to zero (also via `IncomingReconciliation`, since a reversal is architecturally a correction to zero - no new `MovementType` was added). CR-041's double-verify guard is the entity's own `RequireStatus`/`Reconciled` checks, exercised end-to-end, not re-implemented here.
+- **`TransactionalResult<T>`/`TransactionalError`** (new, `Inventory.Application.Common`): the Phase 8+ sibling of Phase 5/6's `MasterDataResult` - a distinct shape because document state machines and stock-posting failures (`InsufficientStock`, `InvalidStateTransition`, `EmptyDocument`, `ConcurrencyConflict`) share nothing with master-data CRUD failures.
+- **`IdempotencyContext`** (new, `Inventory.Application.Common`) plus a same-transaction recording path: task 7.9's `IdempotencyMiddleware` only checks/rejects - it deliberately never records, since "only the handler that produced the response knows what's safe to cache" (docs/30 §6.2 step 6, task 7.10). Phase 8 is the first real handler: `ReceivingOrdersEndpoints` re-reads the exact buffered raw request body (the same bytes the middleware hashed - a re-serialized DTO would never match a future retry's hash) and passes it through to `ReceivingOrderService`, which calls `IIdempotencyService.RecordResponse` and lets the SAME `SaveChangesAsync`/transaction that commits the business change also persist the idempotency record - a concurrent-duplicate race surfaces as `DbUpdateException` on that save, which is caught, rolled back, and resolved by re-`CheckAsync`-ing for the winner's now-committed response (exactly the race handling `IIdempotencyService`'s own doc comment specifies).
+- **`ReceivingOrdersEndpoints`** (task 8.9): `POST /receiving-orders`, line add/remove, `/submit`, `/verify`, `/reverse` (all mutating routes carry `.AddEndpointFilter<AntiforgeryEndpointFilter>()`; submit/verify/reverse also carry `.RequireIdempotencyKey()`), plus `GET /warehouses/{id}/stock` (task 8.11). `IScopeGuard`'s first real consumer: Warehouse Staff is checked against `GetAuthorizedWarehouseIdsAsync` for every route touching a specific warehouse (403 `FORBIDDEN_SCOPE` when out of scope); Owner/Admin are unrestricted within the tenant, matching docs/03's Receiving permission row.
+- **`IFinancialProjection`'s first real consumer** (task 8.10): `ReceivingOrderService` applies it to every `unitCost`/`totalCost`/`averageUnitCost` field in every response DTO - Admin (and any non-Owner) gets `null`, never a zeroed or omitted field masquerading as real data.
+- **`TransactionalErrorWriter`**, five new `ErrorCodes` entries (all pre-existing in docs/13's original catalogue - no new catalogue addition needed, unlike some earlier phases).
+- **`ReceivingOrderTests`** (task 8.13): 8 new integration tests over real HTTP.
+
+### 16.2 Verified — executed, output observed
+
+| Check | Command / Method | Result |
+| :--- | :--- | :---: |
+| docs/23 Scenario 1: `500 + 100 = 600` after submit | `ReceivingOrderTests.Scenario_1_And_2_Submit_Then_Verify_Posts_Only_The_Delta` | ✅ |
+| docs/23 Scenario 2: verify actual=80 vs expected=100 → `580`, explicitly asserted **never** `680` or `660` | Same test | ✅ |
+| A second verify on an already-`Verified` order is rejected (CR-041); the balance from the first verify is untouched | `ReceivingOrderTests.Verifying_An_Already_Verified_Order_Is_Rejected` | ✅ |
+| Reversing a submitted order drives the balance back to `0` | `ReceivingOrderTests.Reversing_A_Submitted_Order_Drives_The_Balance_Back_To_Zero` | ✅ |
+| Resubmitting with the same idempotency key posts stock exactly once (not twice) | `ReceivingOrderTests.Idempotent_Resubmit_With_The_Same_Key_Posts_Stock_Exactly_Once` | ✅ |
+| Submit without an `X-Idempotency-Key` header is `400 IDEMPOTENCY_KEY_REQUIRED` | `ReceivingOrderTests.Submit_Without_An_Idempotency_Key_Is_Rejected` | ✅ |
+| Warehouse Staff with no assigned scope gets `403 FORBIDDEN_SCOPE` creating an order against any warehouse | `ReceivingOrderTests.Warehouse_Staff_Outside_Their_Scope_Gets_403` | ✅ |
+| Admin's `GET` response has `unitCost`/`totalCost` = `null` on every line (never a real number) | `ReceivingOrderTests.Admin_Never_Sees_Cost_Fields` | ✅ |
+| Owner sees real costs; `GET /warehouses/{id}/stock` reports balance/available/average cost correctly | `ReceivingOrderTests.Owner_Sees_Cost_Fields_And_Warehouse_Stock_Reports_Balance` | ✅ |
+| Full solution suite, multiple consecutive runs | `dotnet test` | ✅ 160/160 (27 unit, 19 architecture, 114 integration), every run |
+
+### 16.3 Not verified — genuinely out of Phase 8 scope
+
+| Item | Why deferred |
+| :--- | :--- |
+| A dedicated reversal-after-verify test (reversing a `Verified`, not just a `Submitted`, order) | The `ReverseAsync` code path treats `Reconciled` lines uniformly with unreconciled ones (net-posted-quantity math covers both), and the existing reversal test already exercises the underlying `IStockPostingService` reconciliation-movement path that a post-verify reversal would also use - a dedicated case would strengthen confidence further and is a reasonable first test to add if Phase 9+ work touches this code again. |
+| Insufficient-stock-on-reverse (ADR-021/task 8.8, reversal breaching zero) | Requires an intervening consumption (Phase 11, not built yet) between submit and reverse - no such scenario can exist until restaurant receipt confirmation exists. |
+| A frontend-driven receiving workflow | Frontend phases (F1-F6) have not started this session. |

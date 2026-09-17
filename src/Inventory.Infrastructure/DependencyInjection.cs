@@ -105,6 +105,9 @@ public static class DependencyInjection
         services.AddScoped<IStockPostingService, Stock.StockPostingService>();
         services.AddScoped<IInTransitCalculator, Stock.InTransitCalculator>();
         services.AddScoped<IIdempotencyService, Idempotency.IdempotencyService>();
+
+        // Phase 8: receiving (docs/09 8.1-8.13, docs/30 §4 T1/T2/T3).
+        services.AddScoped<Application.Receiving.IReceivingOrderService, Receiving.ReceivingOrderService>();
         services.AddHostedService<Idempotency.MaintenanceBackgroundService>();
         // Scoped, not Singleton: this handler depends on ICurrentUserService and
         // IPermissionEvaluator, both request-scoped. A Singleton registration here would repeat
