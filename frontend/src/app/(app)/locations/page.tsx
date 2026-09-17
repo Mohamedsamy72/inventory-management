@@ -1,6 +1,9 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
+import { Warehouse } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
 import { SimpleMasterDataScreen } from '@/components/features/simple-master-data-screen';
 import { RestaurantsScreen } from '@/components/features/restaurants-screen';
 
@@ -17,6 +20,8 @@ interface WarehouseSummary {
  * behind tabs - both are location master data, but their forms genuinely differ
  * (a restaurant requires a serving-warehouse selection; a warehouse does not). */
 export default function LocationsPage() {
+  const router = useRouter();
+
   return (
     <Tabs defaultValue="warehouses">
       <TabsList>
@@ -35,6 +40,16 @@ export default function LocationsPage() {
             { key: 'address', label: 'العنوان' },
             { key: 'description', label: 'الوصف' },
           ]}
+          rowActions={(row) => (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => router.push(`/locations/${row.id}/stock`)}
+              aria-label="عرض رصيد المخزون"
+            >
+              <Warehouse />
+            </Button>
+          )}
         />
       </TabsContent>
       <TabsContent value="restaurants" className="mt-4">

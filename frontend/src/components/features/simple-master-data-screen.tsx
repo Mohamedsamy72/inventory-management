@@ -43,6 +43,9 @@ export interface SimpleMasterDataScreenProps {
   /** All fields including `nameArabic` itself, in display/form order. */
   fields: SimpleEntityField[];
   emptyMessage: string;
+  /** Extra per-row action buttons rendered before edit/toggle (e.g. Warehouses' "view stock"
+   * link) - kept optional so the four other entities using this screen stay unaffected. */
+  rowActions?: (row: { id: string }) => React.ReactNode;
 }
 
 /**
@@ -59,6 +62,7 @@ export function SimpleMasterDataScreen<TSummary extends BaseSummary>({
   permissionCode,
   fields,
   emptyMessage,
+  rowActions,
 }: SimpleMasterDataScreenProps) {
   const { profile } = useSession();
   const { items, isLoading, error, hasNextPage, hasPreviousPage, nextPage, previousPage, refetch } =
@@ -151,6 +155,7 @@ export function SimpleMasterDataScreen<TSummary extends BaseSummary>({
       header: '',
       cell: ({ row }: CellContext<TSummary, unknown>) => (
         <div className="flex items-center gap-1">
+          {rowActions?.(row.original)}
           <Button variant="ghost" size="icon-sm" onClick={() => openEdit(row.original)} aria-label="تعديل">
             <Pencil />
           </Button>
@@ -200,6 +205,7 @@ export function SimpleMasterDataScreen<TSummary extends BaseSummary>({
               </Badge>
             </div>
             <div className="flex items-center gap-1">
+              {rowActions?.(row)}
               <Button variant="ghost" size="icon-sm" onClick={() => openEdit(row)} aria-label="تعديل">
                 <Pencil />
               </Button>
