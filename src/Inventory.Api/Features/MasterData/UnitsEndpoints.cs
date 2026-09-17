@@ -6,6 +6,7 @@ namespace Inventory.Api.Features.MasterData;
 
 public sealed record CreateUnitRequest(string NameArabic, string? Abbreviation);
 public sealed record UpdateUnitRequest(string NameArabic, string? Abbreviation);
+public sealed record UnitNameOption(Guid Id, string NameArabic);
 
 /// <summary>Task 5.6.</summary>
 public static class UnitsEndpoints
@@ -16,6 +17,10 @@ public static class UnitsEndpoints
 
         units.MapPost("/", CreateAsync).RequireAuthorization("units:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         units.MapGet("/", ListAsync).RequireAuthorization("units:manage");
+        // Mirrors Warehouses/Restaurants/Suppliers' "/names" - Warehouse Staff and Restaurant
+        // Supervisor hold no units:manage (docs/03 §"Master Data" - ❌ for both), yet the
+        // receiving/supply-request line editors both need a unit picker by name.
+        units.MapGet("/names", ListNamesAsync).RequireAuthorization();
         units.MapGet("/{id:guid}", GetAsync).RequireAuthorization("units:manage");
         units.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("units:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         units.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("units:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
@@ -34,6 +39,12 @@ public static class UnitsEndpoints
     {
         KeysetPage<UnitSummary> page = await service.ListAsync(KeysetPagination.ClampLimit(limit), cursor, httpContext.RequestAborted);
         return Results.Ok(page);
+    }
+
+    private static async Task<IResult> ListNamesAsync(HttpContext httpContext, IUnitService service)
+    {
+        KeysetPage<UnitSummary> page = await service.ListAsync(200, null, httpContext.RequestAborted);
+        return Results.Ok(page.Items.Select(u => new UnitNameOption(u.Id, u.NameArabic)).ToList());
     }
 
     private static async Task<IResult> GetAsync(Guid id, HttpContext httpContext, IUnitService service)

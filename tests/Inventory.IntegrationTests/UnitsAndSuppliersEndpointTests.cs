@@ -111,6 +111,40 @@ public sealed class UnitsAndSuppliersEndpointTests : IClassFixture<WebApplicatio
         Assert.Equal(HttpStatusCode.Created, second.StatusCode);
     }
 
+    /// <summary>Warehouse Staff holds no `units:manage`/`suppliers:manage` (docs/03 §"Master
+    /// Data" - ❌ for both), yet the receiving-order line editor they use needs a unit picker
+    /// and the create form needs a supplier picker, both by name.</summary>
+    [Fact]
+    public async Task Warehouse_Staff_Can_List_Unit_And_Supplier_Names_But_Not_The_Full_Manage_Gated_Lists()
+    {
+        using HttpClient ownerClient = await LoginAsOwnerAsync();
+        using HttpResponseMessage unitResponse = await AuthTestHelpers.PostJsonAsync(
+            ownerClient, "/api/v1/units", new { nameArabic = "كيلوجرام " + Guid.NewGuid().ToString("N")[..6], abbreviation = (string?)null });
+        var unit = await unitResponse.Content.ReadFromJsonAsync<UnitDto>();
+        using HttpResponseMessage supplierResponse = await AuthTestHelpers.PostJsonAsync(
+            ownerClient, "/api/v1/suppliers",
+            new { nameArabic = "مورد " + Guid.NewGuid().ToString("N")[..6], phone = (string?)null, contactPerson = (string?)null, address = (string?)null, notes = (string?)null });
+        var supplier = await supplierResponse.Content.ReadFromJsonAsync<SupplierDto>();
+
+        using IServiceScope scope = _factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        Guid companyId = (await context.Units.IgnoreQueryFilters().FirstAsync(u => u.Id == unit!.Id)).CompanyId;
+        (User staffUser, string staffPassword) = await AuthTestHelpers.CreateUserInCompanyAsync(_factory, companyId);
+        await AuthTestHelpers.AssignRoleAsync(_factory, staffUser.Id, RoleName.WarehouseStaff);
+        using HttpClient staffClient = await AuthTestHelpers.LoginAsAsync(_factory, staffUser, staffPassword);
+
+        using HttpResponseMessage unitNames = await staffClient.GetAsync("/api/v1/units/names");
+        Assert.Equal(HttpStatusCode.OK, unitNames.StatusCode);
+        Assert.Contains((await unitNames.Content.ReadFromJsonAsync<List<NameDto>>())!, u => u.Id == unit!.Id);
+        Assert.Equal(HttpStatusCode.Forbidden, (await staffClient.GetAsync("/api/v1/units")).StatusCode);
+
+        using HttpResponseMessage supplierNames = await staffClient.GetAsync("/api/v1/suppliers/names");
+        Assert.Equal(HttpStatusCode.OK, supplierNames.StatusCode);
+        Assert.Contains((await supplierNames.Content.ReadFromJsonAsync<List<NameDto>>())!, s => s.Id == supplier!.Id);
+        Assert.Equal(HttpStatusCode.Forbidden, (await staffClient.GetAsync("/api/v1/suppliers")).StatusCode);
+    }
+
     private sealed record UnitDto(Guid Id, string NameArabic, string? Abbreviation, bool IsActive, DateTimeOffset CreatedAt);
     private sealed record SupplierDto(Guid Id, string NameArabic, string? Phone, bool IsActive, DateTimeOffset CreatedAt);
+    private sealed record NameDto(Guid Id, string NameArabic);
 }

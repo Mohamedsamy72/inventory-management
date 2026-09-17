@@ -7,6 +7,7 @@ namespace Inventory.Api.Features.MasterData;
 public sealed record CreateRestaurantRequest(string NameArabic, string Code, Guid DefaultServingWarehouseId, string? Address, string? Description);
 public sealed record UpdateRestaurantRequest(string NameArabic, string? Address, string? Description);
 public sealed record ChangeServingWarehouseRequest(Guid WarehouseId);
+public sealed record RestaurantNameOption(Guid Id, string NameArabic, string Code);
 
 /// <summary>Task 5.9.</summary>
 public static class RestaurantsEndpoints
@@ -17,6 +18,10 @@ public static class RestaurantsEndpoints
 
         restaurants.MapPost("/", CreateAsync).RequireAuthorization("restaurants:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         restaurants.MapGet("/", ListAsync).RequireAuthorization("restaurants:manage");
+        // Mirrors WarehousesEndpoints' "/names" - Restaurant Supervisor holds no restaurants:*
+        // permission (docs/03 §"Warehouses & Branches" - ❌), yet needs to resolve their own
+        // scoped restaurantId to a name (e.g. the supply-request creation dialog).
+        restaurants.MapGet("/names", ListNamesAsync).RequireAuthorization();
         restaurants.MapGet("/{id:guid}", GetAsync).RequireAuthorization("restaurants:manage");
         restaurants.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("restaurants:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         restaurants.MapPut("/{id:guid}/serving-warehouse", ChangeServingWarehouseAsync).RequireAuthorization("restaurants:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
@@ -37,6 +42,12 @@ public static class RestaurantsEndpoints
     {
         KeysetPage<RestaurantSummary> page = await service.ListAsync(KeysetPagination.ClampLimit(limit), cursor, httpContext.RequestAborted);
         return Results.Ok(page);
+    }
+
+    private static async Task<IResult> ListNamesAsync(HttpContext httpContext, IRestaurantService service)
+    {
+        KeysetPage<RestaurantSummary> page = await service.ListAsync(200, null, httpContext.RequestAborted);
+        return Results.Ok(page.Items.Select(r => new RestaurantNameOption(r.Id, r.NameArabic, r.Code)).ToList());
     }
 
     private static async Task<IResult> GetAsync(Guid id, HttpContext httpContext, IRestaurantService service)

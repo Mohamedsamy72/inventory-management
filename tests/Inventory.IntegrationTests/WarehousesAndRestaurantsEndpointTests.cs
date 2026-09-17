@@ -4,6 +4,7 @@ using Inventory.Domain.Entities;
 using Inventory.Domain.Enums;
 using Inventory.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -123,6 +124,59 @@ public sealed class WarehousesAndRestaurantsEndpointTests : IClassFixture<WebApp
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
+    /// <summary>A Warehouse Staff / Restaurant Supervisor user holds no `warehouses:manage` or
+    /// `restaurants:manage` permission at all (docs/03 §"Warehouses & Branches" - both ❌ for
+    /// both roles), yet every screen they use (receiving, supply requests, supplies) references
+    /// a warehouseId/restaurantId they need to display as a name - proves the lower-privileged
+    /// "/names" projection is reachable where the full manage-gated list is correctly not.</summary>
+    [Fact]
+    public async Task Warehouse_Staff_Can_List_Warehouse_Names_But_Not_The_Full_Manage_Gated_List()
+    {
+        using HttpClient ownerClient = await LoginAsOwnerAsync();
+        Guid warehouseId = await CreateWarehouseAsync(ownerClient);
+
+        using IServiceScope scope = _factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        Guid companyId = (await context.Warehouses.IgnoreQueryFilters().FirstAsync(w => w.Id == warehouseId)).CompanyId;
+        (User staffUser, string staffPassword) = await AuthTestHelpers.CreateUserInCompanyAsync(_factory, companyId);
+        await AuthTestHelpers.AssignRoleAsync(_factory, staffUser.Id, RoleName.WarehouseStaff);
+        using HttpClient staffClient = await AuthTestHelpers.LoginAsAsync(_factory, staffUser, staffPassword);
+
+        using HttpResponseMessage namesResponse = await staffClient.GetAsync("/api/v1/warehouses/names");
+        Assert.Equal(HttpStatusCode.OK, namesResponse.StatusCode);
+        var names = await namesResponse.Content.ReadFromJsonAsync<List<WarehouseNameDto>>();
+        Assert.Contains(names!, w => w.Id == warehouseId);
+
+        using HttpResponseMessage fullListResponse = await staffClient.GetAsync("/api/v1/warehouses");
+        Assert.Equal(HttpStatusCode.Forbidden, fullListResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task Restaurant_Supervisor_Can_List_Restaurant_Names_But_Not_The_Full_Manage_Gated_List()
+    {
+        using HttpClient ownerClient = await LoginAsOwnerAsync();
+        Guid warehouseId = await CreateWarehouseAsync(ownerClient);
+        using HttpResponseMessage restaurantResponse = await AuthTestHelpers.PostJsonAsync(
+            ownerClient, "/api/v1/restaurants",
+            new { nameArabic = "فرع الاختبار", code = "RST-" + Guid.NewGuid().ToString("N")[..6], defaultServingWarehouseId = warehouseId, address = (string?)null, description = (string?)null });
+        var restaurant = await restaurantResponse.Content.ReadFromJsonAsync<RestaurantDto>();
+
+        using IServiceScope scope = _factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        Guid companyId = (await context.Warehouses.IgnoreQueryFilters().FirstAsync(w => w.Id == warehouseId)).CompanyId;
+        (User supervisorUser, string supervisorPassword) = await AuthTestHelpers.CreateUserInCompanyAsync(_factory, companyId);
+        await AuthTestHelpers.AssignRoleAsync(_factory, supervisorUser.Id, RoleName.RestaurantSupervisor);
+        using HttpClient supervisorClient = await AuthTestHelpers.LoginAsAsync(_factory, supervisorUser, supervisorPassword);
+
+        using HttpResponseMessage namesResponse = await supervisorClient.GetAsync("/api/v1/restaurants/names");
+        Assert.Equal(HttpStatusCode.OK, namesResponse.StatusCode);
+        var names = await namesResponse.Content.ReadFromJsonAsync<List<RestaurantNameDto>>();
+        Assert.Contains(names!, r => r.Id == restaurant!.Id);
+
+        using HttpResponseMessage fullListResponse = await supervisorClient.GetAsync("/api/v1/restaurants");
+        Assert.Equal(HttpStatusCode.Forbidden, fullListResponse.StatusCode);
+    }
+
     private static async Task<Guid> CreateWarehouseAsync(HttpClient client)
     {
         using HttpResponseMessage response = await AuthTestHelpers.PostJsonAsync(
@@ -134,4 +188,6 @@ public sealed class WarehousesAndRestaurantsEndpointTests : IClassFixture<WebApp
 
     private sealed record WarehouseDto(Guid Id, string NameArabic, string Code, bool IsActive);
     private sealed record RestaurantDto(Guid Id, string NameArabic, string Code, Guid DefaultServingWarehouseId, bool IsActive);
+    private sealed record WarehouseNameDto(Guid Id, string NameArabic, string Code);
+    private sealed record RestaurantNameDto(Guid Id, string NameArabic, string Code);
 }

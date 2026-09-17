@@ -6,6 +6,7 @@ namespace Inventory.Api.Features.MasterData;
 
 public sealed record CreateSupplierRequest(string NameArabic, string? Phone, string? ContactPerson, string? Address, string? Notes);
 public sealed record UpdateSupplierRequest(string NameArabic, string? Phone, string? ContactPerson, string? Address, string? Notes);
+public sealed record SupplierNameOption(Guid Id, string NameArabic);
 
 /// <summary>Task 5.7.</summary>
 public static class SuppliersEndpoints
@@ -16,6 +17,10 @@ public static class SuppliersEndpoints
 
         suppliers.MapPost("/", CreateAsync).RequireAuthorization("suppliers:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         suppliers.MapGet("/", ListAsync).RequireAuthorization("suppliers:manage");
+        // Mirrors Warehouses/Restaurants' "/names" - Warehouse Staff holds receiving:create
+        // (scoped) but no suppliers:manage at all (docs/03 §"Master Data" - ❌), yet the
+        // receiving-order create form needs to offer a supplier picker by name.
+        suppliers.MapGet("/names", ListNamesAsync).RequireAuthorization();
         suppliers.MapGet("/{id:guid}", GetAsync).RequireAuthorization("suppliers:manage");
         suppliers.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("suppliers:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         suppliers.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("suppliers:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
@@ -35,6 +40,12 @@ public static class SuppliersEndpoints
     {
         KeysetPage<SupplierSummary> page = await service.ListAsync(KeysetPagination.ClampLimit(limit), cursor, httpContext.RequestAborted);
         return Results.Ok(page);
+    }
+
+    private static async Task<IResult> ListNamesAsync(HttpContext httpContext, ISupplierService service)
+    {
+        KeysetPage<SupplierSummary> page = await service.ListAsync(200, null, httpContext.RequestAborted);
+        return Results.Ok(page.Items.Select(s => new SupplierNameOption(s.Id, s.NameArabic)).ToList());
     }
 
     private static async Task<IResult> GetAsync(Guid id, HttpContext httpContext, ISupplierService service)

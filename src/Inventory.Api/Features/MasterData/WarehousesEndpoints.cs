@@ -6,6 +6,7 @@ namespace Inventory.Api.Features.MasterData;
 
 public sealed record CreateWarehouseRequest(string NameArabic, string Code, string? Address, string? Description);
 public sealed record UpdateWarehouseRequest(string NameArabic, string? Address, string? Description);
+public sealed record WarehouseNameOption(Guid Id, string NameArabic, string Code);
 
 /// <summary>Task 5.8.</summary>
 public static class WarehousesEndpoints
@@ -16,6 +17,13 @@ public static class WarehousesEndpoints
 
         warehouses.MapPost("/", CreateAsync).RequireAuthorization("warehouses:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         warehouses.MapGet("/", ListAsync).RequireAuthorization("warehouses:manage");
+        // Any authenticated tenant user (no specific permission) - id/name/code only, never
+        // address/description. Warehouse Staff and Restaurant Supervisor hold no warehouses:*
+        // permission at all (docs/03 §"Warehouses & Branches" - both ❌), yet every screen they
+        // use (receiving, supply requests, supplies) references a warehouseId they need to show
+        // as a name, not a bare GUID. The full manage-gated list stays manage-only; this is
+        // deliberately a much smaller, non-sensitive projection of the same tenant-scoped data.
+        warehouses.MapGet("/names", ListNamesAsync).RequireAuthorization();
         warehouses.MapGet("/{id:guid}", GetAsync).RequireAuthorization("warehouses:manage");
         warehouses.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("warehouses:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         warehouses.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("warehouses:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
@@ -35,6 +43,12 @@ public static class WarehousesEndpoints
     {
         KeysetPage<WarehouseSummary> page = await service.ListAsync(KeysetPagination.ClampLimit(limit), cursor, httpContext.RequestAborted);
         return Results.Ok(page);
+    }
+
+    private static async Task<IResult> ListNamesAsync(HttpContext httpContext, IWarehouseService service)
+    {
+        KeysetPage<WarehouseSummary> page = await service.ListAsync(200, null, httpContext.RequestAborted);
+        return Results.Ok(page.Items.Select(w => new WarehouseNameOption(w.Id, w.NameArabic, w.Code)).ToList());
     }
 
     private static async Task<IResult> GetAsync(Guid id, HttpContext httpContext, IWarehouseService service)
