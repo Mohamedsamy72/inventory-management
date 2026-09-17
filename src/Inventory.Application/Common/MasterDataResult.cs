@@ -11,6 +11,11 @@ public enum MasterDataError
     None,
     NotFound,
     DuplicateName,
+
+    /// <summary>Items specifically (docs/13's pre-existing `DUPLICATE_ITEM_NAME`, distinct from
+    /// the generic <see cref="DuplicateName"/> the other Phase 5 resources use).</summary>
+    DuplicateItemName,
+
     GeneratedFieldNotAccepted,
     SequenceExhausted,
     ServingWarehouseUnavailable,

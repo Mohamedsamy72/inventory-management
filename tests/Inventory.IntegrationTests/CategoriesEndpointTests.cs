@@ -32,6 +32,20 @@ public sealed class CategoriesEndpointTests : IClassFixture<WebApplicationFactor
         return (client, company);
     }
 
+    /// <summary>Every Phase 5 mutating endpoint must carry the same CSRF protection Phase 3
+    /// established for auth (task 3.7) - proven once here rather than per resource, since all
+    /// six master-data resources apply the identical AntiforgeryEndpointFilter.</summary>
+    [Fact]
+    public async Task Creating_A_Category_Without_A_Csrf_Token_Is_Rejected()
+    {
+        (HttpClient client, _) = await LoginAsOwnerAsync();
+
+        using HttpResponseMessage response = await client.PostAsJsonAsync(
+            "/api/v1/categories", new { nameArabic = "قسم بلا حماية", description = (string?)null });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     [Fact]
     public async Task Creating_A_Category_Succeeds_And_Returns_It()
     {

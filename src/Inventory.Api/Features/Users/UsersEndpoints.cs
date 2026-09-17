@@ -21,12 +21,12 @@ public static class UsersEndpoints
     {
         RouteGroupBuilder users = app.MapGroup("/api/v1/users");
 
-        users.MapPost("/", CreateUserAsync).RequireAuthorization("users:manage");
+        users.MapPost("/", CreateUserAsync).RequireAuthorization("users:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         users.MapGet("/", ListUsersAsync).RequireAuthorization("users:view");
         users.MapGet("/{id:guid}", GetUserAsync).RequireAuthorization("users:view");
-        users.MapPut("/{id:guid}/role", ChangeRoleAsync).RequireAuthorization("users:manage");
-        users.MapPut("/{id:guid}/scope", SetScopeAsync).RequireAuthorization("users:scope");
-        users.MapPut("/{id:guid}/permissions", SetPermissionsAsync).RequireAuthorization("users:manage");
+        users.MapPut("/{id:guid}/role", ChangeRoleAsync).RequireAuthorization("users:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        users.MapPut("/{id:guid}/scope", SetScopeAsync).RequireAuthorization("users:scope").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        users.MapPut("/{id:guid}/permissions", SetPermissionsAsync).RequireAuthorization("users:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
 
         return app;
     }

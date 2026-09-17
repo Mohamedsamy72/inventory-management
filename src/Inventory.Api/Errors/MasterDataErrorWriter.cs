@@ -17,6 +17,7 @@ internal static class MasterDataErrorWriter
         (int statusCode, string code) = error switch
         {
             MasterDataError.DuplicateName => (StatusCodes.Status409Conflict, ErrorCodes.DuplicateName),
+            MasterDataError.DuplicateItemName => (StatusCodes.Status409Conflict, ErrorCodes.DuplicateItemName),
             MasterDataError.GeneratedFieldNotAccepted => (StatusCodes.Status400BadRequest, ErrorCodes.GeneratedFieldNotAccepted),
             MasterDataError.SequenceExhausted => (StatusCodes.Status409Conflict, ErrorCodes.SequenceExhausted),
             MasterDataError.ServingWarehouseUnavailable => (StatusCodes.Status409Conflict, ErrorCodes.ServingWarehouseUnavailable),

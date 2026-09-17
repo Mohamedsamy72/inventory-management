@@ -14,12 +14,12 @@ public static class SuppliersEndpoints
     {
         RouteGroupBuilder suppliers = app.MapGroup("/api/v1/suppliers");
 
-        suppliers.MapPost("/", CreateAsync).RequireAuthorization("suppliers:manage");
+        suppliers.MapPost("/", CreateAsync).RequireAuthorization("suppliers:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         suppliers.MapGet("/", ListAsync).RequireAuthorization("suppliers:manage");
         suppliers.MapGet("/{id:guid}", GetAsync).RequireAuthorization("suppliers:manage");
-        suppliers.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("suppliers:manage");
-        suppliers.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("suppliers:manage");
-        suppliers.MapPost("/{id:guid}/reactivate", ReactivateAsync).RequireAuthorization("suppliers:manage");
+        suppliers.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("suppliers:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        suppliers.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("suppliers:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        suppliers.MapPost("/{id:guid}/reactivate", ReactivateAsync).RequireAuthorization("suppliers:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
 
         return app;
     }

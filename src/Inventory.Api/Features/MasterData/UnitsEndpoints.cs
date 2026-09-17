@@ -14,12 +14,12 @@ public static class UnitsEndpoints
     {
         RouteGroupBuilder units = app.MapGroup("/api/v1/units");
 
-        units.MapPost("/", CreateAsync).RequireAuthorization("units:manage");
+        units.MapPost("/", CreateAsync).RequireAuthorization("units:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         units.MapGet("/", ListAsync).RequireAuthorization("units:manage");
         units.MapGet("/{id:guid}", GetAsync).RequireAuthorization("units:manage");
-        units.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("units:manage");
-        units.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("units:manage");
-        units.MapPost("/{id:guid}/reactivate", ReactivateAsync).RequireAuthorization("units:manage");
+        units.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("units:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        units.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("units:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        units.MapPost("/{id:guid}/reactivate", ReactivateAsync).RequireAuthorization("units:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
 
         return app;
     }

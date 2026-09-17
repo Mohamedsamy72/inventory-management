@@ -17,12 +17,12 @@ public static class CategoriesEndpoints
         // docs/03 §3: categories:manage is the ONLY category permission - there is no separate
         // "view" tier (Warehouse Staff/Restaurant Supervisor get no category access by default,
         // matching their ❌ row in the matrix), so every operation here gates on it alike.
-        categories.MapPost("/", CreateAsync).RequireAuthorization("categories:manage");
+        categories.MapPost("/", CreateAsync).RequireAuthorization("categories:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         categories.MapGet("/", ListAsync).RequireAuthorization("categories:manage");
         categories.MapGet("/{id:guid}", GetAsync).RequireAuthorization("categories:manage");
-        categories.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("categories:manage");
-        categories.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("categories:manage");
-        categories.MapPost("/{id:guid}/reactivate", ReactivateAsync).RequireAuthorization("categories:manage");
+        categories.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("categories:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        categories.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("categories:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        categories.MapPost("/{id:guid}/reactivate", ReactivateAsync).RequireAuthorization("categories:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
 
         return app;
     }

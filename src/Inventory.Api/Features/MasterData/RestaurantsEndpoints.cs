@@ -14,12 +14,12 @@ public static class RestaurantsEndpoints
     {
         RouteGroupBuilder restaurants = app.MapGroup("/api/v1/restaurants");
 
-        restaurants.MapPost("/", CreateAsync).RequireAuthorization("restaurants:manage");
+        restaurants.MapPost("/", CreateAsync).RequireAuthorization("restaurants:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         restaurants.MapGet("/", ListAsync).RequireAuthorization("restaurants:manage");
         restaurants.MapGet("/{id:guid}", GetAsync).RequireAuthorization("restaurants:manage");
-        restaurants.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("restaurants:manage");
-        restaurants.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("restaurants:manage");
-        restaurants.MapPost("/{id:guid}/reactivate", ReactivateAsync).RequireAuthorization("restaurants:manage");
+        restaurants.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("restaurants:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        restaurants.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("restaurants:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        restaurants.MapPost("/{id:guid}/reactivate", ReactivateAsync).RequireAuthorization("restaurants:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
 
         return app;
     }

@@ -14,12 +14,12 @@ public static class WarehousesEndpoints
     {
         RouteGroupBuilder warehouses = app.MapGroup("/api/v1/warehouses");
 
-        warehouses.MapPost("/", CreateAsync).RequireAuthorization("warehouses:manage");
+        warehouses.MapPost("/", CreateAsync).RequireAuthorization("warehouses:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         warehouses.MapGet("/", ListAsync).RequireAuthorization("warehouses:manage");
         warehouses.MapGet("/{id:guid}", GetAsync).RequireAuthorization("warehouses:manage");
-        warehouses.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("warehouses:manage");
-        warehouses.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("warehouses:manage");
-        warehouses.MapPost("/{id:guid}/reactivate", ReactivateAsync).RequireAuthorization("warehouses:manage");
+        warehouses.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("warehouses:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        warehouses.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("warehouses:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        warehouses.MapPost("/{id:guid}/reactivate", ReactivateAsync).RequireAuthorization("warehouses:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
 
         return app;
     }

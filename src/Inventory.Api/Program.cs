@@ -100,6 +100,7 @@ app.MapUnitsEndpoints();
 app.MapSuppliersEndpoints();
 app.MapWarehousesEndpoints();
 app.MapRestaurantsEndpoints();
+app.MapItemsEndpoints();
 
 // ---- Health probes (docs/32 CR-064) ---------------------------------------
 // Both are unauthenticated, so both disclose liveness and nothing else: no
