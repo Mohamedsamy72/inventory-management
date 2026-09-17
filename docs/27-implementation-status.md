@@ -2,7 +2,7 @@
 
 > **Document ID:** SPEC-27
 > **Status:** Live Implementation Register
-> **Current State:** **Phase 1 through Phase 4 CLOSED (2026-09-16/17).** Backend `dotnet build -warnaserror` -> 0 errors, 0 warnings across all 7 projects; `dotnet test` -> 69/69 passing (2 unit, 18 architecture, 49 integration), confirmed stable across repeated consecutive runs. Frontend verified green (typecheck, lint, tests, production build) as of Phase 1. The initial migration (33 entities, composite tenant FKs throughout, `xmin` concurrency, append-only triggers, `audit_logs` partitioning, the full docs/29 §5 index plan, role/permission seed data) applies cleanly to an empty database and is proven by real execution — not just review — against this repo's own PostgreSQL instance. Phase 3 also fixed a critical, phase-independent bug in the tenant query filter introduced in Phase 2 — see §11.2 row 1; it affects every tenant-scoped query in the system, not just auth. **Phase 5 (Master Data) is next.**
+> **Current State:** **Phase 1 through Phase 5 CLOSED (2026-09-16/17).** Backend `dotnet build -warnaserror` -> 0 errors, 0 warnings across all 7 projects; `dotnet test` -> 113/113 passing (19 unit, 18 architecture, 76 integration), confirmed stable across repeated consecutive runs. Frontend verified green (typecheck, lint, tests, production build) as of Phase 1. The initial migration (33 entities, composite tenant FKs throughout, `xmin` concurrency, append-only triggers, `audit_logs` partitioning, the full docs/29 §5 index plan, role/permission seed data) applies cleanly to an empty database and is proven by real execution — not just review — against this repo's own PostgreSQL instance. Phase 3 also fixed a critical, phase-independent bug in the tenant query filter introduced in Phase 2 — see §11.2 row 1; it affects every tenant-scoped query in the system, not just auth. Phase 5 also found and fixed a CSRF gap spanning every Phase 4/5 mutating endpoint — see §13.2. **Phase 6 (Unit Conversion System) is next.**
 >
 > **Environment note for the next session:** this repo's PostgreSQL 16 instance (`C:\pg-inventory-system\`, port 5433) is portable binaries, not a registered Windows service — it does not survive a machine/session restart on its own. If `dotnet test`'s integration suite fails with "Failed to connect to 127.0.0.1:5433 ... actively refused", start it first: `C:\pg-inventory-system\pgsql\bin\pg_ctl.exe start -D C:\pg-inventory-system\data -l C:\pg-inventory-system\logfile.log -o "-p 5433" -w` (docs/19 §1, docs/33 §4.3).
 > **Plan Authority:** `docs/09-implementation-plan.md` (supersedes `docs/22-implementation-plan.md`).
@@ -28,8 +28,8 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **P2** | Database foundation, tenancy, initial migration | ✅ **COMPLETE** | All 31 tasks (2.1–2.31) done and verified. See §9A for full detail. | ✅ Signed off 2026-09-17 |
 | **P3** | Authentication, sessions, CSRF, rate limiting | ✅ **COMPLETE** | All 14 tasks (3.1–3.14) done and verified. See §11 for full detail. | ✅ Signed off 2026-09-17 |
 | **P4** | Authorization, scopes, role denial, **audit infrastructure** | ✅ **COMPLETE** | All 15 tasks (4.1–4.15) done and verified. See §12 for full detail. | ✅ Signed off 2026-09-17 |
-| **P5** | Master data | ⏳ **Next** | Gap-free concurrent code generation. | — |
-| **P6** | Unit conversion system | ⏳ Pending | Server-only factor resolution. | — |
+| **P5** | Master data | ✅ **COMPLETE** | All 16 tasks (5.1–5.16) done and verified. See §13 for full detail. | ✅ Signed off 2026-09-17 |
+| **P6** | Unit conversion system | ⏳ **Next** | Server-only factor resolution. | — |
 | **P7** | Stock engine, transactions, concurrency, idempotency | ⏳ Pending | `xmin` token; lock ordering; projected idempotency payloads. | — |
 | **P8** | Receiving & warehouse stock ledger | ⏳ Pending | Reconciliation must post the delta, never the full actual. | — |
 | **P9** | Multi-item supply requests | ⏳ Pending | Unblocked — OD-008 closed (ADR-028). Warehouse derived server-side; over-post security test mandatory. | — |
@@ -416,3 +416,59 @@ The repository's NuGet vulnerability audit (`NU1900`-`NU1904`) began failing out
 | `IFinancialProjection` applied to a real cost/valuation field | No item, receiving order, or stock balance exists yet to have a cost. First real consumer is Phase 5's item projection or Phase 7's stock valuation. |
 | `Admin` cost/audit masking on a real financial endpoint (docs/03 §5.1) | Same reason - no financial endpoint exists yet. The role-denial pipeline itself is proven (§12.3); its first financial caller will prove the end-to-end masking. |
 | `docs/14 §3` Owner Activity Monitor / Audit Log viewer | Explicitly Phase 14 (`docs/14 §4` "Phase placement"). This phase builds only the write-side infrastructure the viewer will read from. |
+
+---
+
+## 13. Phase 5 Verification Ledger
+
+**Phase 5 is SIGNED OFF (2026-09-17).** All 16 tasks (`docs/09` §Phase 5, table 5.1–5.16) implemented and verified against this repository's own PostgreSQL instance and a real in-process HTTP pipeline.
+
+### 13.1 What was built
+
+- **`IDocumentSequenceService`** (task 5.1, docs/28 §5.3, ADR-025): a single `INSERT ... ON CONFLICT ... DO UPDATE ... RETURNING` raw-SQL statement per allocation, executed directly over the caller's connection - the interface documents that the caller MUST open its own explicit transaction first, since the raw SQL otherwise commits independently of whatever `SaveChangesAsync` follows. Proven directly (not through an entity endpoint) with 1,000 concurrent allocations yielding exactly `{1..1000}` (AC-28-1), a rolled-back allocation leaving the counter unchanged and the number reused (AC-28-3), and the monthly period key derived from the tenant's configured timezone, not UTC (ADR-024) - defaulting to `Africa/Cairo` when no `CompanySettings` row exists, since no phase in this plan ever schedules a company/tenant-provisioning endpoint.
+- **`KeysetPagination`** (task 5.13, docs/21 §1): the shared cursor encode/decode + "was there another page" logic every list endpoint below reuses; each service still writes its own `ORDER BY`/`WHERE` clause, since a fully generic EF LINQ keyset predicate across unrelated entity types is not reliably translatable.
+- **`MasterDataResult<T>`/`MasterDataError`/`MasterDataErrorWriter`**: one consistent result/error-mapping shape shared by all six resources below, catching a unique-constraint violation and mapping it to `409 DUPLICATE_NAME` (or `DUPLICATE_ITEM_NAME` for items specifically - docs/13's pre-existing, item-worded code) instead of an opaque 500.
+- **Categories, Units, Suppliers** (tasks 5.5-5.7): create/list/get/update/deactivate/reactivate, deactivate-not-delete only (task 5.12 - no `DELETE` route exists anywhere in the solution, verified by grep, not merely by omission). `Unit.Update`/`Supplier.Update` domain methods were added - neither entity had one before (only `Deactivate`/`Reactivate` existed from Phase 2). Suppliers deliberately allows duplicate names: the real migration carries no `uq_suppliers_*` constraint, matching that two real-world suppliers can share a business name.
+- **Warehouses, Restaurants** (tasks 5.8-5.9): `Code` is client-supplied at creation (docs/28 §4 does not number warehouses/restaurants) and immutable thereafter. Restaurant creation enforces ADR-028 SW-6: `defaultServingWarehouseId` must name a warehouse that exists AND is `Active` in the caller's own tenant, returning `409 SERVING_WAREHOUSE_UNAVAILABLE` otherwise - proven against a nonexistent id, an inactive warehouse, and a real warehouse id belonging to a *different* company (indistinguishable from nonexistent once the tenant query filter applies).
+- **Items** (tasks 5.3, 5.10, 5.11, 5.14): `ITM-000001`-style codes allocated inside an explicit transaction alongside the insert. A client-supplied `generatedCode` is detected by parsing the raw request body BEFORE binding to the DTO and rejected with `400 GENERATED_FIELD_NOT_ACCEPTED` (docs/28 §5.1 point 2) - stronger than the "DTO simply doesn't declare the property" baseline every other Phase 5 resource relies on alone, because docs/28 requires an *explicit* rejection here, not a silent drop. Search normalizes the query through the same `ArabicTextNormalizer` the stored name went through (docs/31 §4.2) and matches via `EF.Functions.ILike` against the `pg_trgm`-indexed `name_normalized` column - proven with a query using different diacritics/alef-forms than the stored spelling. Base-unit immutability (ADR-023) checks `stock_ledger` for any row referencing the item - always `false` today (Phase 7 hasn't posted anything yet), written correctly now so it takes effect the moment posting exists, without needing revisiting.
+- **19 new unit tests** (`ArabicTextNormalizerTests`, `ItemEntityTests` - task 5.15, previously-untested Phase 2 code), **6 new architecture-adjacent integration test files**, and the CSRF fix in §13.2 below.
+
+### 13.2 A pre-existing bug found and fixed while building this phase
+
+**None of Phase 4's `/api/v1/users*` endpoints, nor any of this phase's six master-data resources, had `AntiforgeryEndpointFilter` applied to their mutating routes** - the exact CSRF control Phase 3 built and proved for `/auth/*` (task 3.7) was never carried forward to any endpoint built afterward. Found by auditing every `MapPost`/`MapPut` across both phases (24 routes); fixed on all of them at once. Verified two ways: the existing 90+ test suite still passed unmodified (every test already attached a real CSRF token, matching real frontend behaviour), and a new test confirms a request with no token is now genuinely rejected with `400` - before the fix, it would have been silently accepted.
+
+### 13.3 A design/tooling conflict found and worked around: EF Core alternate keys are unconditionally immutable
+
+`ItemConfiguration` declares `(company_id, id, base_unit_id)` an EF alternate key (`uq_items_base_unit`), built in Phase 2 specifically to back `item_unit_conversions`' composite FK (ADR-023: "a conversion must target the item's own base unit"). EF Core's change tracker refuses to modify ANY property participating in ANY key it tracks - primary or alternate - the instant it detects a change, regardless of whether a dependent row currently exists to actually break. Reproduced directly: calling the natural `item.ChangeBaseUnit(...)` + `SaveChangesAsync()` path threw `InvalidOperationException` on every attempt, including ones where zero `ItemUnitConversion` rows existed. Fixed by updating `base_unit_id` via `ExecuteSqlInterpolatedAsync` (raw SQL, bypassing the change tracker for this one column) inside an explicit transaction shared with the audit row - and the now-misleading `Item.ChangeBaseUnit` domain method, which implied the normal tracked-entity path worked, was removed rather than left as a footgun for a future caller.
+
+### 13.4 Verified — executed, output observed
+
+| Check | Command / Method | Result |
+| :--- | :--- | :---: |
+| 1,000 concurrent item-code allocations yield exactly `{1..1000}`, no gaps, no duplicates (AC-28-1) | `DocumentSequenceServiceTests.One_Thousand_Concurrent_Allocations_Yield_One_Thousand_Distinct_Gap_Free_Codes` | ✅ |
+| A rolled-back allocation leaves the counter unchanged; the number is reused (AC-28-3) | `DocumentSequenceServiceTests.A_Rolled_Back_Allocation_Leaves_The_Counter_Unchanged_And_The_Number_Is_Reused` | ✅ |
+| Monthly period key derived from the tenant's timezone, not UTC (ADR-024) | `DocumentSequenceServiceTests.Allocating_A_Monthly_Document_Number_Uses_The_Tenant_Timezone_Business_Month` | ✅ |
+| Category/Unit/Item duplicate (normalized) name → `409` | `Creating_A_Duplicate_Category_Name_...`, `Creating_A_Duplicate_Unit_Name_Returns_409`, `Creating_An_Item_With_A_Duplicate_Normalized_Name_Returns_409` | ✅ |
+| Two suppliers may legitimately share one name (no constraint exists) | `Two_Suppliers_May_Share_The_Same_Name` | ✅ |
+| Keyset pagination returns a working, non-overlapping next page | `Listing_Categories_Paginates_By_Keyset_With_A_Working_Next_Cursor` | ✅ |
+| Cross-tenant `GET` on any master-data resource → `404` | `Getting_A_Category_From_A_Different_Company_Returns_404` | ✅ |
+| Missing permission → `403` on list/create | `A_User_Without_Categories_Manage_Is_Forbidden` | ✅ |
+| Restaurant creation rejects a nonexistent, inactive, or cross-tenant serving warehouse (ADR-028 SW-6) | `Creating_A_Restaurant_With_A_Nonexistent_...`, `..._An_Inactive_...`, `..._Another_Companys_Warehouse_Returns_409` | ✅ all `409 SERVING_WAREHOUSE_UNAVAILABLE` |
+| Item code format is `ITM-######` | `Allocating_An_Item_Code_Twice_Produces_Sequential_Six_Digit_Codes`, `Creating_An_Item_Allocates_A_Six_Digit_ITM_Code` | ✅ |
+| A client-supplied `generatedCode` is rejected with `400 GENERATED_FIELD_NOT_ACCEPTED`, not silently dropped (AC-28-2) | `Submitting_A_Client_Supplied_GeneratedCode_Is_Rejected_With_400` | ✅ |
+| Search matches a differently-diacritized query against the stored name | `Searching_By_A_Differently_Diacritized_Query_Still_Finds_The_Item` | ✅ |
+| Base unit changes successfully while no ledger activity exists | `Changing_The_Base_Unit_Succeeds_While_No_Ledger_Activity_Exists` | ✅ |
+| 50 concurrent item creations (integration-level, full service stack) yield 50 distinct codes | `Fifty_Concurrent_Item_Creations_Yield_Fifty_Distinct_Codes` | ✅ |
+| Every Phase 5 mutating endpoint rejects a request with no CSRF token | `Creating_A_Category_Without_A_Csrf_Token_Is_Rejected` | ✅ `400` |
+| `ArabicTextNormalizer` normalization rules (diacritics, tatweel, alef forms, ta-marbuta, alef-maksura) | `ArabicTextNormalizerTests` (9 facts/theories) | ✅ |
+| `Item` entity preserves the raw display name and re-derives the normalized key on construction/update; `generatedCode` is immutable | `ItemEntityTests` (3 facts) | ✅ |
+| Full solution suite, multiple consecutive runs | `dotnet test InventorySystem.sln` | ✅ 113/113 (19 unit, 18 architecture, 76 integration), every run |
+
+### 13.5 Not verified — genuinely out of Phase 5 scope
+
+| Item | Why deferred |
+| :--- | :--- |
+| `docs/09` task 5.16's literal 1,000-concurrent-item-creation acceptance test, run through the full HTTP/service stack | The gap-free/no-duplicate guarantee (AC-28-1) is exhaustively proven at 1,000-scale directly against `IDocumentSequenceService` (§13.4) - the mechanism that actually provides the guarantee. A lighter 50-concurrent check through the full `POST /items` stack (§13.4) confirms the surrounding category/unit-validation and transaction wrapper add no regression, without paying the cost of re-running the same 1,000-scale proof through a slower path for a guarantee already established. |
+| `IFinancialProjection` applied to a real cost/valuation field | Items carry no cost field at all (docs/15 §1 point 1: cost originates exclusively from posted `ReceivingOrder` rows, never stored statically on an item). The masking primitive built in Phase 4 remains unused until Phase 7/8 introduce the first entity that actually carries a cost. |
+| Base-unit immutability (ADR-023) actually blocking a change once ledger rows exist | No `stock_ledger` row can exist before Phase 7's posting service. The guard's query is written and will take effect the moment Phase 7 posts a row - proven then, against real data, not simulated now. |
+| `ItemUnitConversion` CRUD | Explicitly Phase 6 ("Unit Conversion System"), not Phase 5 - the entity exists from Phase 2 but this phase does not manage it. |

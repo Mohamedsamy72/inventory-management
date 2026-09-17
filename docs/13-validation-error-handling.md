@@ -41,6 +41,8 @@
 | `EMPTY_DOCUMENT` | 400 | Document must contain at least one line. | يجب أن يحتوي المستند على صنف واحد على الأقل. |
 | `PRIVILEGE_ESCALATION_DENIED` | 403 | This action exceeds your granted authority. | لا يمكنك تنفيذ هذا الإجراء، فهو يتجاوز الصلاحيات الممنوحة لك. |
 | `INVALID_PASSWORD` | 400 | Password does not meet the required complexity. | كلمة المرور لا تحقق متطلبات القوة المطلوبة. |
+| `DUPLICATE_NAME` | 409 | A record with this name or code already exists. | يوجد سجل مسجل مسبقاً بنفس الاسم أو الرمز في المنشأة. |
+| `BASE_UNIT_IMMUTABLE` | 409 | The base unit cannot change once stock ledger entries exist for this item. | لا يمكن تغيير وحدة القياس الأساسية بعد وجود حركات مخزنية لهذا الصنف. |
 
 ---
 
@@ -60,5 +62,7 @@ Nine error codes were added above to cover behaviour specified in `docs/28`, `do
 `SERVING_WAREHOUSE_UNAVAILABLE` (CR-092) is the failure mode introduced by ADR-028: a restaurant whose default serving warehouse is missing or inactive. The server returns it and **stops** — it never falls back to another warehouse, because a silently redirected requisition is worse than a refused one.
 
 Two further codes were added during Phase 4 implementation (docs/09 §Phase 4 task 4.8, task 4.14): `PRIVILEGE_ESCALATION_DENIED` for the privilege-escalation guards docs/09-authorization-security.md §2.4 requires (no self role/scope change, only Owner creates Owner, Admin cannot grant beyond its own bounds) — none of the nine codes above fit a permission/role-authority violation distinct from `FORBIDDEN_SCOPE`'s warehouse/restaurant-location meaning — and `INVALID_PASSWORD` for ASP.NET Core Identity's own password-complexity rejection during user creation (task 4.14), which had no prior code either.
+
+Two more were added during Phase 5 (docs/09 §Phase 5 tasks 5.5-5.8, 5.11): `DUPLICATE_NAME` for categories/units/warehouses/restaurants' own per-company uniqueness constraints (`DUPLICATE_ITEM_NAME` above is item-specific, by name and by Arabic wording — "صنف" means item) — a generic code rather than four more near-duplicates; and `BASE_UNIT_IMMUTABLE` for ADR-023, which had no prior code.
 
 **`messageEn` is a developer diagnostic.** It is never rendered to a user and is omitted entirely in the `Production` environment (`docs/31 §4.1`, CR-072). Only `messageAr` reaches the interface.
