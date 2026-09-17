@@ -36,8 +36,8 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **P10** | Fulfilment & dispatch | ✅ **COMPLETE** | All 8 tasks (10.1–10.8) done and verified. See §18 for full detail. | ✅ Signed off 2026-09-17 |
 | **P11** | Restaurant receipt confirmation | ✅ **COMPLETE** | All 11 tasks (11.1–11.11) done and verified. Highest-consequence module - see §19 for full detail. | ✅ Signed off 2026-09-17 |
 | **P12** | Discrepancies & reconciliation | ✅ **COMPLETE** | All 7 tasks (12.1–12.7) done and verified. See §20 for full detail. | ✅ Signed off 2026-09-17 |
-| **P13** | Physical stock counts & adjustments | ⏳ **Next** | In-transit exclusion (ADR-018); server-side blind counting. | — |
-| **P14** | Audit viewer & activity monitor | ⏳ Pending | Owner-only, no grant path. | — |
+| **P13** | Physical stock counts & adjustments | ✅ **COMPLETE** | All 11 tasks (13.1–13.11) done and verified. See §21 for full detail. | ✅ Signed off 2026-09-17 |
+| **P14** | Audit viewer & activity monitor | ⏳ **Next** | Owner-only, no grant path. | — |
 | **P15** | File storage & evidence | 🚫 **DEFERRED** | ADR-029. Not scheduled. Activates only if an approved workflow requires an attachment. | — |
 | **P16** | Reporting & analytics | 🚫 **DEFERRED** | ADR-029. Not scheduled. `docs/17 §4` extension points remain **binding on the core phases**. | — |
 | **F1** | Frontend shell & design system | ⏳ Pending | May run parallel with P1–P4. | — |
@@ -733,3 +733,36 @@ The repository's NuGet vulnerability audit (`NU1900`-`NU1904`) began failing out
 | `StockUnavailableAtConfirmation` discrepancy creation via the supervisor's "report to warehouse management" action (docs/30 §7.1 step 2) | Flagged as deferred to this phase back in §19.1/§19.3, but on closer reading this is its own distinct UI-initiated action (not auto-created by any existing transaction) with no dedicated endpoint task number anywhere in docs/09's Phase 12 list either - it is store/CRUD-equivalent to any other manually-raised discrepancy, which docs/09 does not scope as a Phase 12 deliverable. Left for a future phase or an explicit product decision on whether such a manual-raise endpoint is needed at all versus relying on Owner/Admin discovering `Dispatched` supplies stuck past their expected window through other means. |
 | `StockCountVariance` discrepancy creation | Phase 13's own job (Physical Stock Counts & Adjustments) - the count workflow that produces this variance type does not exist yet. |
 | A frontend-driven discrepancy review/resolution workflow | Frontend phases (F1-F6) have not started this session. |
+
+## 21. Phase 13 Verification Ledger
+
+**Phase 13 is SIGNED OFF (2026-09-17).** All 11 tasks (`docs/09` §Phase 13, 13.1–13.11, ADR-018/020/021) implemented and verified over real HTTP. `StockCount`/`StockCountItem` (Phase 2) already had the full `Draft -> InProgress -> PendingApproval -> Approved|Rejected` state machine - this phase adds the create/record/submit/approve/reject surface, reusing `IStockPostingService`'s existing dispatch logic for the adjustment posting itself with zero new costing code.
+
+### 21.1 What was built
+
+- **`IStockCountService.CreateAsync`** (tasks 13.1-13.3): allocates a `CNT-` number, moves straight to `InProgress` (no task in this phase's list needs a separate zero-duration `Draft` action - the entity's own `Draft` state exists for the state machine's completeness, not for a distinct workflow step here), and snapshots ONE `StockCountItem` per item currently holding a balance in the warehouse. `SystemQuantity` = `StockBalance.Quantity` MINUS `IInTransitCalculator.GetInTransitQuantityAsync` (ADR-018) - verified directly: dispatching 20 units leaves the balance at 100 (dispatch never deducts) but the count's expected figure correctly reads 80, never 100.
+- **`RecordAsync`** (tasks 13.4-13.5): `InProgress` only, accepts a subset of lines (physical counting is naturally incremental across aisles/shifts - `SubmitForApprovalAsync`, a new endpoint this phase adds since the state machine cannot reach `PendingApproval` without one, is the explicit "counting is done" signal). Blind-count suppression (task 13.4's own flagged risk: implementing this only in the UI would leak the figure over the wire) is enforced in the DTO-building step itself, for EVERY caller including the counter's own immediate response to their own `record` call - revealing `SystemQuantity`/`Variance` back to them there would let them learn what the system expected for the line they just entered and adjust later lines in the same count accordingly, defeating the control mid-count. Verified: the raw JSON of every response (create, get, record) has `systemQuantity: null` and `variance: null` throughout counting; only `approve`'s response (and any later `GET`) reveals them.
+- **`ApproveAsync`** (transaction T8, task 13.6): idempotency required, mirroring Phase 8/11's same-transaction recording pattern. Posts `PHYSICAL_ADJUSTMENT` per non-zero-variance line via `IStockPostingService` - for a negative variance this is the SAME conditional-atomic-deduction path already used by every other negative movement type (Phase 7), so "never breach zero" (task 13.9/ADR-021) is free; for a positive variance, `PhysicalAdjustment` was already one of the two movement types Phase 7's `ValueAtCurrentCost` path was built for, so "valued at current WAC, WAC unchanged" (task 13.8/ADR-020) required zero new logic either. Creates a `StockCountVariance` `Discrepancy` per non-zero line (task 12.2's fourth type, now with its first real producer). Line immutability after approval (task 13.10) needed no separate mechanism: `RecordAsync`'s own `InProgress`-only guard already makes a line unreachable for editing the moment the status leaves that state.
+- **`RejectAsync`** (task 13.7): `PendingApproval -> InProgress`, zero stock effect - no `IStockPostingService` call anywhere in the method.
+- **Permissions**: task 13.6 requires "Owner/Admin only" - already true structurally, since `stock_counts:approve` (seeded in Phase 4/12's own migrations, pre-dating this phase) is granted only to those two roles, neither of which is ever warehouse-scoped; no additional scope check was needed on approve/reject.
+- **`StockCountTests`** (task 13.11): 7 new integration tests over real HTTP.
+
+### 21.2 Verified — executed, output observed
+
+| Check | Command / Method | Result |
+| :--- | :--- | :---: |
+| A non-zero variance (100 -> 95) posts a `PHYSICAL_ADJUSTMENT -5` ledger row valued at the current WAC (10), a `StockCountVariance` discrepancy, and the balance ends at exactly 95 | `StockCountTests.Non_Zero_Variance_Posts_An_Adjustment_Valued_At_Current_Wac` | ✅ |
+| A zero variance posts no ledger row at all | `StockCountTests.Zero_Variance_Posts_No_Adjustment` | ✅ |
+| Rejecting returns to `InProgress`, posts nothing, balance unchanged | `StockCountTests.Rejecting_Posts_No_Stock_Effect_And_Returns_To_InProgress` | ✅ |
+| Blind mode: `systemQuantity`/`variance` are `null` in the raw JSON of create, get, AND the counter's own record response; both reveal correctly once approved | `StockCountTests.Blind_Count_Never_Transmits_The_System_Quantity_Over_The_Wire` | ✅ |
+| A count opened after a 20-unit dispatch (balance still 100) reads `SystemQuantity = 80`, correctly excluding the in-transit goods | `StockCountTests.In_Transit_Goods_Are_Excluded_From_The_Expected_Figure` | ✅ |
+| Warehouse Staff gets `403` attempting to approve | `StockCountTests.Warehouse_Staff_Cannot_Approve` | ✅ |
+| A record call after approval is `400 INVALID_STATE_TRANSITION` | `StockCountTests.Lines_Are_Immutable_After_Approval` | ✅ |
+| Full solution suite, two consecutive clean runs | `dotnet test` | ✅ 197/197 (27 unit, 19 architecture, 151 integration), every run |
+
+### 21.3 Not verified — genuinely out of Phase 13 scope
+
+| Item | Why deferred |
+| :--- | :--- |
+| Idempotent-replay test for `approve` (same key posts the adjustment exactly once) | The identical same-transaction recording pattern is already verified end-to-end in Phase 8 (`ReceivingOrderTests.Idempotent_Resubmit_...`) and Phase 11 (`SupplyConfirmationTests.Idempotent_Replay_...`) against the exact same code path (`SaveWithIdempotencyAsync`-equivalent logic); a dedicated Phase 13 case would exercise no new code. A reasonable first addition if this exact method is touched again. |
+| A frontend-driven stock-count workflow | Frontend phases (F1-F6) have not started this session. |
