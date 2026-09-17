@@ -52,14 +52,12 @@ export default function ReceivingPage() {
   const [suppliers, setSuppliers] = useState<NamedOption[]>([]);
 
   useEffect(() => {
-    apiClient
-      .get<{ items: NamedOption[] }>('/api/v1/warehouses?limit=100')
-      .then((page) => setWarehouses(page.items))
-      .catch(() => setWarehouses([]));
-    apiClient
-      .get<{ items: NamedOption[] }>('/api/v1/suppliers?limit=100')
-      .then((page) => setSuppliers(page.items))
-      .catch(() => setSuppliers([]));
+    // "/names" (docs/03 §"Master Data" / §"Warehouses & Branches" - both ❌ for Warehouse
+    // Staff), not the manage-gated list: this page's own "أمر توريد جديد" dialog is exactly
+    // where a scoped Warehouse Staff user (who holds receiving:create but no warehouses:manage
+    // or suppliers:manage) needs to pick a warehouse and an optional supplier by name.
+    apiClient.get<NamedOption[]>('/api/v1/warehouses/names').then(setWarehouses).catch(() => setWarehouses([]));
+    apiClient.get<NamedOption[]>('/api/v1/suppliers/names').then(setSuppliers).catch(() => setSuppliers([]));
   }, []);
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -126,7 +124,11 @@ export default function ReceivingPage() {
     {
       id: 'documentNumber',
       header: 'رقم المستند',
-      cell: ({ row }: CellContext<ReceivingOrderSummary, unknown>) => <span dir="ltr">{row.original.documentNumber}</span>,
+      cell: ({ row }: CellContext<ReceivingOrderSummary, unknown>) => (
+        <button type="button" onClick={() => router.push(`/receiving/${row.original.id}`)} className="font-medium text-accent hover:underline" dir="ltr">
+          {row.original.documentNumber}
+        </button>
+      ),
     },
   ].reverse();
 

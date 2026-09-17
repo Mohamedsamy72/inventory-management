@@ -98,9 +98,9 @@ export default function ReceivingOrderPage() {
 
   useEffect(() => {
     void load();
-    apiClient.get<{ items: NamedOption[] }>('/api/v1/warehouses?limit=100').then((page) => setWarehouses(page.items)).catch(() => undefined);
+    apiClient.get<NamedOption[]>('/api/v1/warehouses/names').then(setWarehouses).catch(() => undefined);
     apiClient.get<{ items: ItemOption[] }>('/api/v1/items?limit=200').then((page) => setItems(page.items)).catch(() => undefined);
-    apiClient.get<{ items: NamedOption[] }>('/api/v1/units?limit=100').then((page) => setUnits(page.items)).catch(() => undefined);
+    apiClient.get<NamedOption[]>('/api/v1/units/names').then(setUnits).catch(() => undefined);
   }, [params.id]);
 
   const [lineDialogOpen, setLineDialogOpen] = useState(false);
@@ -339,6 +339,7 @@ export default function ReceivingOrderPage() {
                           step="any"
                           dir="ltr"
                           className="w-24"
+                          aria-label={`الكمية الفعلية - ${itemName(line.itemId)}`}
                           value={actualQuantities[line.id] ?? String(line.expectedQuantity)}
                           onChange={(event) => setActualQuantities((current) => ({ ...current, [line.id]: event.target.value }))}
                         />
