@@ -153,6 +153,14 @@ public sealed class ReceivingOrderTests : IClassFixture<WebApplicationFactory<Pr
         bool reconciliationLedgerRowExists = await context.StockLedgerEntries.IgnoreQueryFilters()
             .AnyAsync(l => l.ItemId == seed.ItemId && l.MovementType == MovementType.IncomingReconciliation && l.BaseQuantity == -20m);
         Assert.True(reconciliationLedgerRowExists);
+
+        // Task 8.5/12.2: the reconciliation variance is also logged as a ReceivingVariance
+        // Discrepancy, not just posted to the ledger.
+        Discrepancy discrepancy = await context.Discrepancies.IgnoreQueryFilters().AsNoTracking()
+            .FirstAsync(d => d.ReferenceId == order.Id && d.ItemId == seed.ItemId);
+        Assert.Equal(DiscrepancyType.ReceivingVariance, discrepancy.Type);
+        Assert.Equal(-20m, discrepancy.Variance);
+        Assert.Equal(DiscrepancyStatus.Open, discrepancy.Status);
     }
 
     [Fact]

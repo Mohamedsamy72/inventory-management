@@ -263,6 +263,7 @@ public sealed class ReceivingOrderService : IReceivingOrderService
         await using IDbContextTransaction transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
         var postingLines = new List<StockPostingLine>();
+        var discrepancies = new List<Discrepancy>();
         foreach (VerifyReceivingOrderLineCommand lineCommand in command.Lines)
         {
             if (!linesById.TryGetValue(lineCommand.LineId, out ReceivingOrderItem? line))
@@ -285,6 +286,13 @@ public sealed class ReceivingOrderService : IReceivingOrderService
                 postingLines.Add(new StockPostingLine(
                     order.WarehouseId, line.ItemId, line.UnitId, lineCommand.ActualQuantity - line.ExpectedQuantity, deltaBaseQuantity,
                     MovementType.IncomingReconciliation, ReferenceType.ReceivingOrder, order.Id, line.UnitCost));
+
+                // Task 8.5/12.2 - every reconciliation variance is also logged as a
+                // ReceivingVariance Discrepancy (DSC- number), not just posted to the ledger.
+                string discrepancyNumber = await _sequenceService.AllocateAsync(DocumentType.Discrepancy, cancellationToken);
+                discrepancies.Add(new Discrepancy(
+                    order.CompanyId, discrepancyNumber, DiscrepancyType.ReceivingVariance, ReferenceType.ReceivingOrder, order.Id,
+                    line.Id, order.WarehouseId, null, line.ItemId, line.BaseQuantity, actualBaseQuantity));
             }
         }
 
@@ -302,6 +310,11 @@ public sealed class ReceivingOrderService : IReceivingOrderService
         }
 
         order.Verify(_currentUserService.UserId);
+
+        foreach (Discrepancy discrepancy in discrepancies)
+        {
+            _context.Discrepancies.Add(discrepancy);
+        }
 
         _auditLogger.Record(new AuditEntry(
             "RECEIVING_ORDER_VERIFIED", nameof(ReceivingOrder), order.Id,
