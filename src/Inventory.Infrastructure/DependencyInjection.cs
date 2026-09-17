@@ -17,6 +17,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Hosting;
 
 namespace Inventory.Infrastructure;
 
@@ -39,8 +40,13 @@ public static class DependencyInjection
     /// <summary>Configuration key holding the primary database connection string.</summary>
     public const string DatabaseConnectionName = "InventoryDatabase";
 
-    /// <summary>The __Host- prefixed session cookie name (docs/08 §3).</summary>
+    /// <summary>The __Host- prefixed session cookie name (docs/08 §3) - Production/Staging
+    /// only. See <see cref="AddAuthentication"/> for why Development uses a different name.</summary>
     public const string SessionCookieName = "__Host-InventorySession";
+
+    /// <summary>Development's session cookie name - deliberately NOT `__Host-`-prefixed. See
+    /// <see cref="AddAuthentication"/>.</summary>
+    public const string DevelopmentSessionCookieName = "InventorySession";
 
     /// <summary>Configuration key holding the allowed frontend origin for CORS (docs/08 §CORS).</summary>
     public const string CorsAllowedOriginKey = "Cors:AllowedOrigin";
@@ -55,10 +61,12 @@ public static class DependencyInjection
     /// <returns>The same <paramref name="services"/> instance, for chaining.</returns>
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IHostEnvironment environment)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(environment);
 
         string? connectionString = configuration.GetConnectionString(DatabaseConnectionName);
 
@@ -74,9 +82,9 @@ public static class DependencyInjection
 
         services.AddDbContext<InventoryDbContext>(options => options.UseNpgsql(connectionString));
 
-        AddAuthentication(services);
+        AddAuthentication(services, environment);
         AddCors(services, configuration);
-        AddCsrf(services);
+        AddCsrf(services, environment);
 
         // Rate limiting (task 3.11) is registered directly in Program.cs, not here - see
         // Inventory.Api.RateLimiting.RateLimitingExtensions for why.
@@ -147,7 +155,21 @@ public static class DependencyInjection
     /// <c>SecurityStampValidator.ValidatePrincipalAsync</c> wired through
     /// <see cref="CookieAuthenticationEvents.OnValidatePrincipal"/>.
     /// </summary>
-    private static void AddAuthentication(IServiceCollection services)
+    /// <remarks>
+    /// Found via real-browser testing (Phase F2), not the C# integration suite: a `__Host-`
+    /// prefixed cookie is REJECTED BY THE BROWSER OUTRIGHT unless it also carries `Secure`, and
+    /// `Secure` cookies require a secure (HTTPS) context to be stored at all - not merely to be
+    /// re-transmitted later. docs/19 §1 mandates plain `http://localhost:5165` for local dev, so
+    /// the unconditional `__Host-InventorySession` + `SecurePolicy.Always` combination silently
+    /// discarded the cookie in every real browser, while a 200 from `/login` looked identical to
+    /// success. The existing `WebApplicationFactory`-based tests never caught this because they
+    /// deliberately fake an `https://` base address to satisfy `Secure` cookie storage inside
+    /// `TestServer` - a workaround that has no equivalent for an actual browser hitting the real
+    /// local process. Development now uses a plain, non-`Secure` cookie name instead of
+    /// swallowing the mismatch; Production/Staging keep the original `__Host-` name and
+    /// `Secure.Always`, matching docs/20 §1's TLS-terminated topology exactly.
+    /// </remarks>
+    private static void AddAuthentication(IServiceCollection services, IHostEnvironment environment)
     {
         services.AddIdentityCore<User>(options =>
             {
@@ -173,9 +195,9 @@ public static class DependencyInjection
         services.AddAuthentication(IdentityConstants.ApplicationScheme)
             .AddCookie(IdentityConstants.ApplicationScheme, options =>
             {
-                options.Cookie.Name = SessionCookieName;
+                options.Cookie.Name = environment.IsDevelopment() ? DevelopmentSessionCookieName : SessionCookieName;
                 options.Cookie.HttpOnly = true;
-                options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+                options.Cookie.SecurePolicy = environment.IsDevelopment() ? CookieSecurePolicy.None : CookieSecurePolicy.Always;
                 options.Cookie.SameSite = SameSiteMode.Strict;
                 options.Cookie.Path = "/";
                 options.ExpireTimeSpan = TimeSpan.FromHours(8);
@@ -221,25 +243,29 @@ public static class DependencyInjection
     /// <c>X-CSRF-TOKEN</c>, to every mutating request. The pairing cookie is separate from the
     /// session cookie and does not require authentication to obtain.
     /// </summary>
-    private static void AddCsrf(IServiceCollection services)
+    /// <remarks>
+    /// Same real-browser finding as <see cref="AddAuthentication"/>'s remarks: a `__Host-`
+    /// prefixed cookie needs `Secure` to be stored at all, which needs HTTPS, which docs/19 §1's
+    /// local dev does not use. The previous `SameAsRequest` policy avoided ASP.NET Core's
+    /// antiforgery system THROWING when asked to issue a Secure cookie over plain HTTP, but the
+    /// `__Host-` prefix on the cookie NAME still triggered the browser's own storage rejection
+    /// regardless of the resulting Secure flag being off - confirmed by a real POST failing CSRF
+    /// validation end to end (`400 CSRF_TOKEN_INVALID`) despite the token being fetched and
+    /// attached correctly. Development drops the prefix entirely instead of relying on a cookie
+    /// attribute the browser was never going to honour for a `__Host-` name anyway.
+    /// </remarks>
+    private static void AddCsrf(IServiceCollection services, IHostEnvironment environment)
     {
         services.AddAntiforgery(options =>
         {
             options.HeaderName = "X-CSRF-TOKEN";
-            options.Cookie.Name = "__Host-InventoryCsrf";
+            options.Cookie.Name = environment.IsDevelopment() ? "InventoryCsrf" : "__Host-InventoryCsrf";
             // The frontend never reads this cookie - it echoes back the separate RequestToken
             // value GET /auth/csrf-token returns in its JSON body, in the X-CSRF-TOKEN header.
             // The cookie itself only needs to travel automatically with the browser; nothing
             // reads it via JS, so HttpOnly stays on for defense in depth.
             options.Cookie.HttpOnly = true;
-            // SameAsRequest, not Always: ASP.NET Core's antiforgery system (unlike the cookie
-            // authentication handler used for the session cookie) actively THROWS if asked to
-            // issue a Secure cookie over a non-HTTPS request - and local dev runs over plain
-            // HTTP (docs/19 §1: http://localhost:5165). SameAsRequest still sets Secure under
-            // real HTTPS (production, behind TLS termination) while not hard-crashing this
-            // auxiliary CSRF-pairing cookie locally. docs/08 §3's unconditional "Secure" example
-            // is for the __Host-InventorySession cookie specifically, which keeps Always.
-            options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+            options.Cookie.SecurePolicy = environment.IsDevelopment() ? CookieSecurePolicy.None : CookieSecurePolicy.Always;
             options.Cookie.SameSite = SameSiteMode.Strict;
         });
     }

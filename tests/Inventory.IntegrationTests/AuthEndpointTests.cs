@@ -2,8 +2,10 @@ using System.Net;
 using System.Net.Http.Json;
 using Inventory.Domain.Entities;
 using Inventory.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Xunit;
@@ -23,8 +25,16 @@ public sealed class AuthEndpointTests : IClassFixture<WebApplicationFactory<Prog
         _factory = factory;
     }
 
+    /// <summary>docs/08 §3's `__Host-InventorySession` + unconditional `Secure` is the
+    /// Production/Staging shape. `WebApplicationFactory` always runs as Development, which - per
+    /// a real-browser finding during Phase F2 - deliberately uses a plain, non-`Secure` cookie
+    /// name instead: a `__Host-` prefixed cookie is rejected by every real browser unless it also
+    /// carries `Secure`, and `Secure` cookies require an actual HTTPS context to be stored at
+    /// all, which docs/19 §1's `http://localhost:5165` local dev is not. This test therefore
+    /// asserts the Development-specific flags, not the Production ones - see
+    /// `DependencyInjection.AddAuthentication`'s remarks for the full story.</summary>
     [Fact]
-    public async Task Valid_Login_Succeeds_And_Issues_The_Session_Cookie_With_The_Documented_Flags()
+    public async Task Valid_Login_Succeeds_And_Issues_The_Session_Cookie_With_The_Development_Flags()
     {
         (Domain.Entities.User user, string password) = await AuthTestHelpers.CreateActiveUserAsync(_factory);
         using HttpClient client = AuthTestHelpers.CreateClientWithCookies(_factory);
@@ -36,9 +46,10 @@ public sealed class AuthEndpointTests : IClassFixture<WebApplicationFactory<Prog
 
         Assert.True(response.Headers.TryGetValues("Set-Cookie", out var cookies), "Expected a Set-Cookie header.");
         string cookieHeader = string.Join(";", cookies!);
-        Assert.Contains("__Host-InventorySession", cookieHeader, StringComparison.Ordinal);
+        Assert.Contains("InventorySession", cookieHeader, StringComparison.Ordinal);
+        Assert.DoesNotContain("__Host-InventorySession", cookieHeader, StringComparison.Ordinal);
         Assert.Contains("httponly", cookieHeader, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("secure", cookieHeader, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("secure", cookieHeader, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("samesite=strict", cookieHeader, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("path=/", cookieHeader, StringComparison.OrdinalIgnoreCase);
     }
@@ -97,8 +108,11 @@ public sealed class AuthEndpointTests : IClassFixture<WebApplicationFactory<Prog
         Assert.True(body!.ContainsKey("csrfToken"));
         Assert.False(string.IsNullOrWhiteSpace(body["csrfToken"]));
 
+        // Development's plain "InventoryCsrf" name, not Production's "__Host-InventoryCsrf" -
+        // same reasoning as the session cookie above.
         Assert.True(response.Headers.TryGetValues("Set-Cookie", out var cookies));
-        Assert.Contains(cookies!, c => c.Contains("__Host-InventoryCsrf", StringComparison.Ordinal));
+        Assert.Contains(cookies!, c => c.Contains("InventoryCsrf", StringComparison.Ordinal));
+        Assert.DoesNotContain(cookies!, c => c.Contains("__Host-InventoryCsrf", StringComparison.Ordinal));
     }
 
     /// <summary>Task 3.14's explicit "CSRF rejection" case: a mutating request presenting no
@@ -262,5 +276,62 @@ public sealed class AuthEndpointTests : IClassFixture<WebApplicationFactory<Prog
         using HttpResponseMessage response = await client.GetAsync("/api/v1/account/me");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    /// <summary>Proves the OTHER branch of the Development/Production cookie split
+    /// (`DependencyInjection.AddAuthentication`'s remarks): a Production-mode host still gets the
+    /// strict docs/08 §3 shape - `__Host-` prefixed, unconditionally `Secure`.</summary>
+    [Fact]
+    public async Task Production_Environment_Still_Issues_The_Strict_Host_Prefixed_Secure_Cookie()
+    {
+        (Domain.Entities.User user, string password) = await AuthTestHelpers.CreateActiveUserAsync(_factory);
+
+        // "Production" skips appsettings.Development.json, which is the only file carrying a
+        // real connection string - re-supply it explicitly so this test's login can still reach
+        // the same database Development already seeded the user into, while still exercising
+        // the actual Production cookie-policy code path.
+        //
+        // This MUST be an environment variable, not a WithWebHostBuilder ConfigureAppConfiguration
+        // override: Program.cs calls AddInfrastructure(builder.Configuration, ...) - which reads
+        // and captures the connection string into AddDbContext's closure - as a top-level statement
+        // that runs as part of WebApplicationFactory's deferred host-build interception, BEFORE any
+        // WithWebHostBuilder configuration delta is merged in. An env var, by contrast, is loaded by
+        // WebApplication.CreateBuilder() itself, ahead of that statement, so it is visible in time.
+        using IServiceScope devScope = _factory.Services.CreateScope();
+        var devConfiguration = devScope.ServiceProvider.GetRequiredService<IConfiguration>();
+        string connectionString = devConfiguration.GetConnectionString(Inventory.Infrastructure.DependencyInjection.DatabaseConnectionName)!;
+
+        const string ConnectionStringEnvironmentVariable = "ConnectionStrings__InventoryDatabase";
+        Environment.SetEnvironmentVariable(ConnectionStringEnvironmentVariable, connectionString);
+        try
+        {
+            using WebApplicationFactory<Program> productionFactory = _factory.WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+            });
+
+            // Same BaseAddress workaround as AuthTestHelpers.CreateClientWithCookies: TestServer
+            // reports Request.IsHttps = false over the default http:// base address, so a real
+            // Secure cookie (correctly) never gets resent - an https:// base address makes it
+            // synthesize Scheme=https instead, matching real production TLS termination.
+            using HttpClient client = productionFactory.CreateClient(new WebApplicationFactoryClientOptions
+            {
+                HandleCookies = true,
+                BaseAddress = new Uri("https://localhost"),
+            });
+
+            using HttpResponseMessage response = await AuthTestHelpers.PostJsonAsync(
+                client, "/api/v1/auth/login", new { mobileNumber = user.MobileNumber, password });
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.True(response.Headers.TryGetValues("Set-Cookie", out var cookies));
+            string cookieHeader = string.Join(";", cookies!);
+            Assert.Contains("__Host-InventorySession", cookieHeader, StringComparison.Ordinal);
+            Assert.Contains("secure", cookieHeader, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ConnectionStringEnvironmentVariable, null);
+        }
     }
 }

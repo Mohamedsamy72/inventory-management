@@ -40,7 +40,7 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
     .WriteTo.Console(new Serilog.Formatting.Compact.CompactJsonFormatter()));
 
 // ---- Services -------------------------------------------------------------
-builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddInfrastructure(builder.Configuration, builder.Environment);
 
 // Rate limiting (task 3.11) lives here, not in Inventory.Infrastructure's AddInfrastructure -
 // see Inventory.Api.RateLimiting.RateLimitingExtensions for why (AddRateLimiter only resolves
