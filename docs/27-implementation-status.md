@@ -2,7 +2,9 @@
 
 > **Document ID:** SPEC-27
 > **Status:** Live Implementation Register
-> **Current State:** **Phase 1, Phase 2 and Phase 3 CLOSED (2026-09-16/17).** Backend `dotnet build -warnaserror` -> 0 errors, 0 warnings across all 7 projects; `dotnet test` -> 52/52 passing (2 unit, 17 architecture, 33 integration). Frontend verified green (typecheck, lint, tests, production build). The initial migration (33 entities, composite tenant FKs throughout, `xmin` concurrency, append-only triggers, `audit_logs` partitioning, the full docs/29 §5 index plan, role/permission seed data) applies cleanly to an empty database and is proven by real execution — not just review — against this repo's own PostgreSQL instance. Phase 3 also fixed a critical, phase-independent bug in the tenant query filter introduced in Phase 2 — see §11.2 row 1; it affects every tenant-scoped query in the system, not just auth. **Phase 4 (Authorization, Scopes, Role Denial & Audit Infrastructure) is next.**
+> **Current State:** **Phase 1 through Phase 4 CLOSED (2026-09-16/17).** Backend `dotnet build -warnaserror` -> 0 errors, 0 warnings across all 7 projects; `dotnet test` -> 69/69 passing (2 unit, 18 architecture, 49 integration), confirmed stable across repeated consecutive runs. Frontend verified green (typecheck, lint, tests, production build) as of Phase 1. The initial migration (33 entities, composite tenant FKs throughout, `xmin` concurrency, append-only triggers, `audit_logs` partitioning, the full docs/29 §5 index plan, role/permission seed data) applies cleanly to an empty database and is proven by real execution — not just review — against this repo's own PostgreSQL instance. Phase 3 also fixed a critical, phase-independent bug in the tenant query filter introduced in Phase 2 — see §11.2 row 1; it affects every tenant-scoped query in the system, not just auth. **Phase 5 (Master Data) is next.**
+>
+> **Environment note for the next session:** this repo's PostgreSQL 16 instance (`C:\pg-inventory-system\`, port 5433) is portable binaries, not a registered Windows service — it does not survive a machine/session restart on its own. If `dotnet test`'s integration suite fails with "Failed to connect to 127.0.0.1:5433 ... actively refused", start it first: `C:\pg-inventory-system\pgsql\bin\pg_ctl.exe start -D C:\pg-inventory-system\data -l C:\pg-inventory-system\logfile.log -o "-p 5433" -w` (docs/19 §1, docs/33 §4.3).
 > **Plan Authority:** `docs/09-implementation-plan.md` (supersedes `docs/22-implementation-plan.md`).
 
 ---
@@ -25,8 +27,8 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **P1** | Solution architecture & infrastructure | ✅ **COMPLETE** | All 17 tasks done and verified by executed command (§6.1, §9). Backend build/test executed directly on the machine (a working .NET toolchain is reachable — the `docs/33 §7.2` unreachable-toolchain note applied to an earlier assisting session, not this one). CI workflow installed at `.github/workflows/ci.yml`. | ✅ Signed off 2026-09-16 |
 | **P2** | Database foundation, tenancy, initial migration | ✅ **COMPLETE** | All 31 tasks (2.1–2.31) done and verified. See §9A for full detail. | ✅ Signed off 2026-09-17 |
 | **P3** | Authentication, sessions, CSRF, rate limiting | ✅ **COMPLETE** | All 14 tasks (3.1–3.14) done and verified. See §11 for full detail. | ✅ Signed off 2026-09-17 |
-| **P4** | Authorization, scopes, role denial, **audit infrastructure** | ⏳ **Next** | Audit must be transactional from the first mutation. | — |
-| **P5** | Master data | ⏳ Pending | Gap-free concurrent code generation. | — |
+| **P4** | Authorization, scopes, role denial, **audit infrastructure** | ✅ **COMPLETE** | All 15 tasks (4.1–4.15) done and verified. See §12 for full detail. | ✅ Signed off 2026-09-17 |
+| **P5** | Master data | ⏳ **Next** | Gap-free concurrent code generation. | — |
 | **P6** | Unit conversion system | ⏳ Pending | Server-only factor resolution. | — |
 | **P7** | Stock engine, transactions, concurrency, idempotency | ⏳ Pending | `xmin` token; lock ordering; projected idempotency payloads. | — |
 | **P8** | Receiving & warehouse stock ledger | ⏳ Pending | Reconciliation must post the delta, never the full actual. | — |
@@ -354,3 +356,63 @@ The repository's NuGet vulnerability audit (`NU1900`-`NU1904`) began failing out
 | `localStorage` never used for the session | A frontend (F2) concern — no frontend code exists yet to violate this. The backend never issues a bearer token to store in the first place; only the `HttpOnly` cookie, which JavaScript cannot read regardless. |
 | ADR-012 Role Denial (`Admin` blocked from cost/audit permissions regardless of grant) | Explicitly Phase 4's pipeline-level handler (task 4.3), not this read-only `/account/me` projection — noted in `AccountProfileReader`'s own doc comment so the omission is never mistaken for an oversight. |
 | `docs/09`'s literal `--filter Category=Auth` verification command | No test in the repository (any phase) carries an xUnit `Category` trait yet — verification instead ran by fully-qualified class name, consistent with how Phase 1/2 were actually verified (§9/§10 use specific fact/class names, not category filters). Recorded as a pre-existing documentation/reality gap across all phases, not a Phase 3 regression. |
+
+---
+
+## 12. Phase 4 Verification Ledger
+
+**Phase 4 is SIGNED OFF (2026-09-17).** All 15 tasks (`docs/09` §Phase 4, table 4.1–4.15) implemented and verified against this repository's own PostgreSQL instance and a real in-process HTTP pipeline — not by review alone.
+
+### 12.1 What was built
+
+- **The five-stage pipeline** (task 4.1, docs/04 §15): authenticate (Phase 3's cookie auth) → tenant (Phase 2's EF global query filter) → role denial + permission grant (`PermissionAuthorizationHandler`) → scope (`IScopeGuard`, called explicitly by a resource handler once it knows which warehouse/restaurant a resource belongs to) → execute.
+- **Permission-based policies** (task 4.2): a custom `IAuthorizationPolicyProvider` (`PermissionPolicyProvider`) treats any `.RequireAuthorization("<module>:<action>")` policy name matching the permission-code shape as a `PermissionRequirement` automatically — no policy needs hand-registering per permission, so the policy set can never drift from `docs/03 §3`'s catalogue.
+- **Role denial** (task 4.3, ADR-012): `PermissionAuthorizationHandler` independently re-checks that a non-Owner can never pass a `costs:view`/`valuation:view`/`audit:view`/`audit:export` requirement, regardless of what `IPermissionEvaluator` (or a bad `user_permissions` row reaching the table some other way) would otherwise say - proven directly by inserting such a row via raw SQL and confirming the pipeline still denies it (§12.3).
+- **Non-grantable rejection** (task 4.4): `UserManagementService.SetPermissionsAsync` rejects any grant naming one of the four ADR-012 codes with `400 NON_GRANTABLE_PERMISSION`, using `Permission.IsCodeGrantable` - the same check `Permission.IsGrantable` uses, so the two can never disagree.
+- **Exactly one role per user** (task 4.5, ADR-014): `UserManagementService.ChangeRoleAsync` replaces (remove-then-add) rather than adds, backed by the existing `UNIQUE (user_id)` constraint on `user_roles` (Phase 2) as the database-level backstop.
+- **`IScopeGuard`** (task 4.6): returns the exact warehouse/restaurant id set a user's `UserWarehouseScope`/`UserRestaurantScope` rows grant - no consuming business endpoint exists before Phase 8/9 (receiving/supply requests), so it is verified directly against the database (§12.3), the same honest posture Phase 1/2 used for infrastructure ahead of its first caller.
+- **404-vs-403 IDOR pattern** (task 4.7, docs/09-authorization-security.md §2.1): out-of-tenant → `404` (the tenant query filter already makes the row invisible, so a not-found lookup is the truthful answer, not a deliberate disguise) — proven end-to-end via `/api/v1/users/{id}` across two companies.
+- **Privilege-escalation guards** (task 4.8, docs/09-authorization-security.md §2.4), enforced inside `UserManagementService` itself (not merely at the endpoint, so no future caller of the service can bypass them): no self role/scope change; only an `Owner` can create or assign another `Owner`; a non-Owner cannot grant a permission code outside their own effective permission set (proven with a deliberately under-privileged actor — see §12.3 — not just the redundant non-grantable-code case).
+- **Mass-assignment guard** (task 4.9): every Request/Command DTO in `Inventory.Api` is architecture-tested (`MassAssignmentRules`) to never declare `companyId`, `userId`, `generatedCode`, `documentNumber`, or `createdAt`; an over-posted `companyId` in a real `POST /users` body is additionally proven inert end-to-end (§12.3), not just structurally absent.
+- **`IFinancialProjection`** (task 4.10, docs/15 §2): masks a `decimal?` to `null` for every role but `Owner` - ready for Phase 5+'s first cost/valuation projection, unused by any endpoint yet (nothing prices anything before Phase 5's items).
+- **Audit interceptor** (task 4.11, docs/14 §1): `IAuditLogger.Record` adds an `AuditLog` to the SAME `DbContext` change tracker the business change already lives in - not a separate `SaveChangesAsync`, so the two can only ever commit or roll back together. `POST /users` is the one exception needing an *explicit* transaction (`IDbContextTransaction`), because `UserManager.CreateAsync` (ASP.NET Core Identity, not this codebase) saves eagerly inside its own call; every other mutating method uses a single implicit-transaction `SaveChangesAsync` and needs no wrapper.
+- **Audit sanitization** (task 4.12, docs/14 §1 point 2): `AuditSanitizer` walks the serialized JSON tree of whatever old/new values a caller passes and redacts any property whose name contains `password`, `otp`, `securitystamp`, `token`, `connectionstring`, or `secret` (case-insensitive, any nesting depth) - a tree walk, not a per-caller convention, so a future handler cannot forget to omit a secret field itself.
+- **Correlation-ID propagation into audit rows** (task 4.13, docs/21 §3): the constant naming the header (`X-Correlation-Id`) moved to `Inventory.Application.Common.CorrelationIdHeader` so `Inventory.Infrastructure`'s `AuditLogger` can read the same value `Inventory.Api`'s `CorrelationIdMiddleware` set, without `Infrastructure` referencing `Api` (ADR-002) - proven end-to-end: the id in the audit row matches the id the HTTP response header actually carried, not merely a non-null string.
+- **`/users`, `/users/{id}`, `/users/{id}/role`, `/users/{id}/scope`, `/users/{id}/permissions`** (task 4.14) with full audit coverage on every mutation.
+- **16 new integration tests** (`AuthorizationTests`) and **1 new architecture test** (`MassAssignmentRules`) covering task 4.15's checklist - see §12.3/§12.4 for exactly which items and which are deferred.
+
+### 12.2 A pre-existing bug found and fixed while building this phase
+
+`PermissionAuthorizationHandler` and `PermissionPolicyProvider` needed to be registered as `IAuthorizationHandler`/`IAuthorizationPolicyProvider`. The handler depends on the request-scoped `ICurrentUserService` and `IPermissionEvaluator` - registering it `AddSingleton` (a plausible first instinct, since ASP.NET Core's own built-in handlers are often singletons) would have reproduced the exact captive-dependency bug already fixed once this session in `InventoryDbContext`'s tenant filter (§11.2 row 1): the FIRST request's scoped instances frozen into a handler every later request reuses. Caught during implementation, before it ever ran; registered `AddScoped` instead.
+
+### 12.3 Verified — executed, output observed
+
+| Check | Command / Method | Result |
+| :--- | :--- | :---: |
+| Cross-tenant `GET /users/{id}` → `404`, not `403` | `Getting_A_User_From_A_Different_Company_Returns_404_Not_403` | ✅ |
+| No `users:view` permission → `403` on `GET /users` | `A_User_With_No_Permissions_Is_Forbidden_From_Listing_Users` | ✅ |
+| Owner can create another Owner | `Owner_Can_Create_Another_Owner` | ✅ `201` |
+| Non-Owner (Admin) creating an Owner → `403 PRIVILEGE_ESCALATION_DENIED` | `A_Non_Owner_Cannot_Create_An_Owner` | ✅ |
+| Over-posted `companyId` on `POST /users` has no effect - the created user lands in the actor's real company | `An_Over_Posted_CompanyId_In_The_Create_User_Body_Is_Ignored` | ✅ |
+| Owner cannot change their own role | `Owner_Cannot_Change_Their_Own_Role` | ✅ `403` |
+| Owner cannot change their own scope | `Owner_Cannot_Change_Their_Own_Scope` | ✅ `403` |
+| Granting a non-grantable code → `400 NON_GRANTABLE_PERMISSION` | `Assigning_A_Non_Grantable_Permission_Returns_400` | ✅ |
+| An actor cannot grant a (grantable) permission they do not themselves hold | `Granting_A_Permission_The_Actor_Does_Not_Hold_Is_Rejected` | ✅ `403 PRIVILEGE_ESCALATION_DENIED` |
+| A role change writes an audit row in the same operation, with the correct actor, role, and the SAME correlation id the HTTP response carried | `Role_Change_Writes_An_Audit_Row_In_The_Same_Operation` | ✅ |
+| A rolled-back operation (FK violation on a nonexistent warehouse id) leaves no audit row AND no partial scope row | `No_Audit_Row_Is_Written_When_The_Operation_Is_Rolled_Back` | ✅ |
+| `IScopeGuard` returns exactly a user's assigned warehouse ids | `Scope_Guard_Returns_Exactly_The_Assigned_Warehouse_Ids` | ✅ |
+| `IScopeGuard` returns empty for a user with no scope rows | `Scope_Guard_Returns_Empty_For_A_User_With_No_Scope_Rows` | ✅ |
+| ADR-012 role denial overrides a `user_permissions` row inserted directly (bypassing the endpoint's own guard) | `Role_Denial_Overrides_A_Non_Grantable_Permission_Even_If_A_Grant_Row_Exists` | ✅ |
+| Owner is still allowed through the same non-grantable-code check | `Role_Denial_Allows_Owner_For_A_Non_Grantable_Permission` | ✅ |
+| `IFinancialProjection` reveals the value only to Owner, masks it to `null` for Admin | `Financial_Projection_Reveals_The_Value_Only_To_Owner` | ✅ |
+| No Request/Command DTO anywhere declares a forbidden bindable property | `MassAssignmentRules.No_Request_Or_Command_Dto_May_Declare_A_Forbidden_Bindable_Property` | ✅ |
+| Full solution suite, multiple consecutive runs | `dotnet test InventorySystem.sln` | ✅ 69/69 (2 unit, 18 architecture, 49 integration), every run |
+
+### 12.4 Not verified — genuinely out of Phase 4 scope
+
+| Item | Why deferred |
+| :--- | :--- |
+| `IScopeGuard` enforced over a real HTTP resource endpoint (e.g. `403 FORBIDDEN_SCOPE` on a receiving order outside a Warehouse Staff user's scope) | No warehouse/restaurant-scoped business resource exists yet - the first one arrives in Phase 8 (receiving) / Phase 9 (supply requests). `IScopeGuard` itself is verified directly against the database (§12.3); its first real caller will prove the HTTP-level `403` end-to-end. |
+| `IFinancialProjection` applied to a real cost/valuation field | No item, receiving order, or stock balance exists yet to have a cost. First real consumer is Phase 5's item projection or Phase 7's stock valuation. |
+| `Admin` cost/audit masking on a real financial endpoint (docs/03 §5.1) | Same reason - no financial endpoint exists yet. The role-denial pipeline itself is proven (§12.3); its first financial caller will prove the end-to-end masking. |
+| `docs/14 §3` Owner Activity Monitor / Audit Log viewer | Explicitly Phase 14 (`docs/14 §4` "Phase placement"). This phase builds only the write-side infrastructure the viewer will read from. |

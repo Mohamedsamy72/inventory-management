@@ -2,12 +2,15 @@ using System.Security.Claims;
 using Inventory.Application.Auth;
 using Inventory.Application.Common;
 using Inventory.Domain.Entities;
+using Inventory.Infrastructure.Audit;
+using Inventory.Infrastructure.Authorization;
 using Inventory.Infrastructure.HealthChecks;
 using Inventory.Infrastructure.Identity;
 using Inventory.Infrastructure.Persistence;
 using Inventory.Infrastructure.Services;
 using Inventory.Infrastructure.Sms;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -82,6 +85,20 @@ public static class DependencyInjection
         services.AddSingleton<IOtpAttemptLimiter, RateLimiting.OtpAttemptLimiter>();
         services.AddScoped<IPasswordResetOtpService, PasswordResetOtpService>();
         services.AddScoped<IAccountProfileReader, Identity.AccountProfileReader>();
+
+        // Phase 4: authorization pipeline (docs/04 §15) and audit infrastructure (docs/14 §1).
+        services.AddScoped<IPermissionEvaluator, PermissionEvaluator>();
+        services.AddScoped<IScopeGuard, ScopeGuard>();
+        services.AddScoped<IAuditLogger, AuditLogger>();
+        services.AddScoped<IFinancialProjection, Services.FinancialProjection>();
+        services.AddScoped<Application.Users.IUserManagementService, Users.UserManagementService>();
+        // Scoped, not Singleton: this handler depends on ICurrentUserService and
+        // IPermissionEvaluator, both request-scoped. A Singleton registration here would repeat
+        // exactly the captive-dependency bug already fixed once in InventoryDbContext's tenant
+        // filter (docs/27 §11.2 row 1) - freezing the FIRST request's scoped instances into a
+        // handler reused by every later request/tenant.
+        services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
+        services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
 
         return services;
     }

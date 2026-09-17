@@ -1,3 +1,5 @@
+using Inventory.Domain.Enums;
+
 namespace Inventory.Application.Common;
 
 /// <summary>
@@ -13,4 +15,9 @@ public interface ICurrentUserService
     Guid CompanyId { get; }
     Guid UserId { get; }
     bool IsAuthenticated { get; }
+
+    /// <summary>The single role claim set at login (ADR-014). Null when unauthenticated or for
+    /// a principal predating role assignment - callers must treat that as "no role", never as
+    /// an implicit grant.</summary>
+    RoleName? Role { get; }
 }

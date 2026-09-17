@@ -1,3 +1,4 @@
+using Inventory.Application.Common;
 using Serilog.Context;
 
 namespace Inventory.Api.Middleware;
@@ -20,7 +21,7 @@ namespace Inventory.Api.Middleware;
 public sealed class CorrelationIdMiddleware
 {
     /// <summary>The request and response header carrying the correlation id.</summary>
-    public const string HeaderName = "X-Correlation-Id";
+    public const string HeaderName = CorrelationIdHeader.Name;
 
     private const int MaxAcceptedLength = 64;
 

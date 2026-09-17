@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Inventory.Application.Common;
+using Inventory.Domain.Enums;
 using Microsoft.AspNetCore.Http;
 
 namespace Inventory.Infrastructure.Services;
@@ -27,6 +28,15 @@ public sealed class CurrentUserService : ICurrentUserService
     public Guid UserId => ReadGuidClaim(UserIdClaimType);
 
     public bool IsAuthenticated => _httpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated ?? false;
+
+    public RoleName? Role
+    {
+        get
+        {
+            string? value = _httpContextAccessor.HttpContext?.User.FindFirstValue(ClaimTypes.Role);
+            return Enum.TryParse(value, out RoleName parsed) ? parsed : null;
+        }
+    }
 
     private Guid ReadGuidClaim(string claimType)
     {

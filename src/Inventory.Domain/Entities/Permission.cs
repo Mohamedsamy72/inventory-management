@@ -45,7 +45,14 @@ public sealed class Permission : Entity
     /// so it is correct both for a freshly constructed instance and for one EF materialises
     /// directly from the database (which bypasses the public constructor).
     /// </summary>
-    public bool IsGrantable => !NonGrantableCodes.Contains(Code);
+    public bool IsGrantable => IsCodeGrantable(Code);
+
+    /// <summary>The same non-grantable check as <see cref="IsGrantable"/>, usable without
+    /// materializing a <see cref="Permission"/> row first - the Phase 4 authorization pipeline's
+    /// role-denial check (ADR-012) needs to ask this about a bare permission code string before
+    /// any database round-trip, as an independent check that does not merely trust that a bad
+    /// grant row could never exist.</summary>
+    public static bool IsCodeGrantable(string code) => !NonGrantableCodes.Contains(code);
 
     public DateTimeOffset CreatedAt { get; private set; }
 }

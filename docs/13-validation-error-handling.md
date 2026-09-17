@@ -39,6 +39,8 @@
 | `CONVERSION_NOT_DEFINED` | 409 | No active conversion for this unit. | لا يوجد معامل تحويل مفعّل لهذه الوحدة لهذا الصنف. |
 | `SEQUENCE_EXHAUSTED` | 409 | Document numbering range exhausted. | تم استنفاد نطاق ترقيم المستندات، يرجى مراجعة إدارة النظام. |
 | `EMPTY_DOCUMENT` | 400 | Document must contain at least one line. | يجب أن يحتوي المستند على صنف واحد على الأقل. |
+| `PRIVILEGE_ESCALATION_DENIED` | 403 | This action exceeds your granted authority. | لا يمكنك تنفيذ هذا الإجراء، فهو يتجاوز الصلاحيات الممنوحة لك. |
+| `INVALID_PASSWORD` | 400 | Password does not meet the required complexity. | كلمة المرور لا تحقق متطلبات القوة المطلوبة. |
 
 ---
 
@@ -56,5 +58,7 @@ All unhandled exceptions are caught by ASP.NET Core `ExceptionHandlerMiddleware`
 Nine error codes were added above to cover behaviour specified in `docs/28`, `docs/30`, `docs/31`, and ADR-012 / ADR-028, none of which previously had an entry in this catalog.
 
 `SERVING_WAREHOUSE_UNAVAILABLE` (CR-092) is the failure mode introduced by ADR-028: a restaurant whose default serving warehouse is missing or inactive. The server returns it and **stops** — it never falls back to another warehouse, because a silently redirected requisition is worse than a refused one.
+
+Two further codes were added during Phase 4 implementation (docs/09 §Phase 4 task 4.8, task 4.14): `PRIVILEGE_ESCALATION_DENIED` for the privilege-escalation guards docs/09-authorization-security.md §2.4 requires (no self role/scope change, only Owner creates Owner, Admin cannot grant beyond its own bounds) — none of the nine codes above fit a permission/role-authority violation distinct from `FORBIDDEN_SCOPE`'s warehouse/restaurant-location meaning — and `INVALID_PASSWORD` for ASP.NET Core Identity's own password-complexity rejection during user creation (task 4.14), which had no prior code either.
 
 **`messageEn` is a developer diagnostic.** It is never rendered to a user and is omitted entirely in the `Production` environment (`docs/31 §4.1`, CR-072). Only `messageAr` reaches the interface.

@@ -20,6 +20,7 @@ public sealed class TenantScopingRules
         public Guid CompanyId => Guid.Empty;
         public Guid UserId => Guid.Empty;
         public bool IsAuthenticated => false;
+        public Domain.Enums.RoleName? Role => null;
     }
 
     private static IModel BuildModel()

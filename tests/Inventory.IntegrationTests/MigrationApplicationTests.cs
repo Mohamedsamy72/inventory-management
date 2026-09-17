@@ -76,6 +76,7 @@ public sealed class MigrationTestDatabaseFixture : IAsyncLifetime
         public Guid CompanyId => Guid.Empty;
         public Guid UserId => Guid.Empty;
         public bool IsAuthenticated => false;
+        public Domain.Enums.RoleName? Role => null;
     }
 }
 
