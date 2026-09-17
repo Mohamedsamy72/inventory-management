@@ -44,6 +44,10 @@ internal static class ErrorCodes
     public const string ConversionNotDefined = "CONVERSION_NOT_DEFINED";
     public const string InvalidConversionFactor = "INVALID_CONVERSION_FACTOR";
 
+    // Phase 7 (docs/30 §6) - both already in docs/13's original catalogue.
+    public const string IdempotencyKeyRequired = "IDEMPOTENCY_KEY_REQUIRED";
+    public const string IdempotencyKeyReuse = "IDEMPOTENCY_KEY_REUSE";
+
     public static string ArabicMessageFor(string code) => code switch
     {
         InvalidCredentials => "رقم الجوال أو كلمة المرور غير صحيحة.",
@@ -63,6 +67,8 @@ internal static class ErrorCodes
         BaseUnitImmutable => "لا يمكن تغيير وحدة القياس الأساسية بعد وجود حركات مخزنية لهذا الصنف.",
         ConversionNotDefined => "لا يوجد معامل تحويل مفعّل لهذه الوحدة لهذا الصنف.",
         InvalidConversionFactor => "معامل التحويل يجب أن يكون قيمة موجبة أكبر من الصفر.",
+        IdempotencyKeyRequired => "مفتاح منع التكرار مطلوب لهذه العملية.",
+        IdempotencyKeyReuse => "تم استخدام مفتاح منع التكرار هذا لعملية مختلفة.",
         _ => throw new ArgumentOutOfRangeException(nameof(code), code, "Unknown error code."),
     };
 
@@ -85,6 +91,8 @@ internal static class ErrorCodes
         BaseUnitImmutable => "The base unit cannot change once stock ledger entries exist for this item.",
         ConversionNotDefined => "No active conversion for this unit.",
         InvalidConversionFactor => "Conversion factor must be positive.",
+        IdempotencyKeyRequired => "Idempotency key is required.",
+        IdempotencyKeyReuse => "Key already used for a different request.",
         _ => throw new ArgumentOutOfRangeException(nameof(code), code, "Unknown error code."),
     };
 }

@@ -86,11 +86,14 @@ if (app.Environment.IsDevelopment())
 // evaluated); authentication before authorization; rate limiting after authentication, because
 // the "general" and "sensitive" policies partition on the authenticated user id when present
 // (Inventory.Api.RateLimiting.RateLimitingExtensions) and would otherwise never see it;
-// antiforgery last, so a request that will not even authenticate is not needlessly validated.
+// idempotency after authorization (task 7.9, docs/30 §6.1/§6.3) - the check is scoped to
+// (company_id, user_id), which only exist once authentication/authorization have run; antiforgery
+// last, so a request that will not even authenticate is not needlessly validated.
 app.UseCors(DependencyInjection.CorsPolicyName);
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
+app.UseMiddleware<IdempotencyMiddleware>();
 app.UseAntiforgery();
 
 app.MapAuthEndpoints();
