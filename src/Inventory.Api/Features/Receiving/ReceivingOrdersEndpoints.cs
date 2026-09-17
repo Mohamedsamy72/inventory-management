@@ -62,7 +62,7 @@ public static class ReceivingOrdersEndpoints
 
         var command = new CreateReceivingOrderCommand(request.WarehouseId, request.SupplierId, request.BusinessDate);
         var result = await service.CreateDraftAsync(command, httpContext.RequestAborted);
-        return result.Succeeded ? Results.Created($"/api/v1/receiving-orders/{result.Value!.Id}", result.Value) : await TransactionalErrorWriter.WriteErrorAsync(httpContext, result.Error);
+        return result.Succeeded ? Results.Created($"/api/v1/receiving-orders/{result.Value!.Id}", result.Value) : await TransactionalErrorWriter.WriteErrorAsync(httpContext, result.Error, result.ErrorDetail);
     }
 
     private static async Task<IResult> ListAsync(HttpContext httpContext, IReceivingOrderService service, int? limit, string? cursor)
@@ -87,7 +87,7 @@ public static class ReceivingOrdersEndpoints
 
         var command = new AddReceivingOrderLineCommand(request.ItemId, request.UnitId, request.ExpectedQuantity, request.UnitCost, request.Notes);
         var result = await service.AddLineAsync(id, command, httpContext.RequestAborted);
-        return result.Succeeded ? Results.Ok(result.Value) : await TransactionalErrorWriter.WriteErrorAsync(httpContext, result.Error);
+        return result.Succeeded ? Results.Ok(result.Value) : await TransactionalErrorWriter.WriteErrorAsync(httpContext, result.Error, result.ErrorDetail);
     }
 
     private static async Task<IResult> RemoveLineAsync(Guid id, Guid lineId, HttpContext httpContext, IReceivingOrderService service, IScopeGuard scopeGuard, ICurrentUserService currentUser)
@@ -99,7 +99,7 @@ public static class ReceivingOrdersEndpoints
         }
 
         var result = await service.RemoveLineAsync(id, lineId, httpContext.RequestAborted);
-        return result.Succeeded ? Results.NoContent() : await TransactionalErrorWriter.WriteErrorAsync(httpContext, result.Error);
+        return result.Succeeded ? Results.NoContent() : await TransactionalErrorWriter.WriteErrorAsync(httpContext, result.Error, result.ErrorDetail);
     }
 
     private static async Task<IResult> SubmitAsync(Guid id, HttpContext httpContext, IReceivingOrderService service, IScopeGuard scopeGuard, ICurrentUserService currentUser)
@@ -112,7 +112,7 @@ public static class ReceivingOrdersEndpoints
 
         IdempotencyContext idempotency = await BuildIdempotencyContextAsync(httpContext);
         var result = await service.SubmitAsync(id, idempotency, httpContext.RequestAborted);
-        return result.Succeeded ? Results.Ok(result.Value) : await TransactionalErrorWriter.WriteErrorAsync(httpContext, result.Error);
+        return result.Succeeded ? Results.Ok(result.Value) : await TransactionalErrorWriter.WriteErrorAsync(httpContext, result.Error, result.ErrorDetail);
     }
 
     private static async Task<IResult> VerifyAsync(Guid id, VerifyReceivingOrderRequest request, HttpContext httpContext, IReceivingOrderService service, IScopeGuard scopeGuard, ICurrentUserService currentUser)
@@ -126,7 +126,7 @@ public static class ReceivingOrdersEndpoints
         IdempotencyContext idempotency = await BuildIdempotencyContextAsync(httpContext);
         var command = new VerifyReceivingOrderCommand(request.Lines.Select(l => new VerifyReceivingOrderLineCommand(l.LineId, l.ActualQuantity)).ToList());
         var result = await service.VerifyAsync(id, command, idempotency, httpContext.RequestAborted);
-        return result.Succeeded ? Results.Ok(result.Value) : await TransactionalErrorWriter.WriteErrorAsync(httpContext, result.Error);
+        return result.Succeeded ? Results.Ok(result.Value) : await TransactionalErrorWriter.WriteErrorAsync(httpContext, result.Error, result.ErrorDetail);
     }
 
     private static async Task<IResult> ReverseAsync(Guid id, ReverseReceivingOrderRequest request, HttpContext httpContext, IReceivingOrderService service, IScopeGuard scopeGuard, ICurrentUserService currentUser)
@@ -139,7 +139,7 @@ public static class ReceivingOrdersEndpoints
 
         IdempotencyContext idempotency = await BuildIdempotencyContextAsync(httpContext);
         var result = await service.ReverseAsync(id, request.Reason, idempotency, httpContext.RequestAborted);
-        return result.Succeeded ? Results.Ok(result.Value) : await TransactionalErrorWriter.WriteErrorAsync(httpContext, result.Error);
+        return result.Succeeded ? Results.Ok(result.Value) : await TransactionalErrorWriter.WriteErrorAsync(httpContext, result.Error, result.ErrorDetail);
     }
 
     /// <summary>Every route calling this carries <c>.RequireIdempotencyKey()</c> with the default

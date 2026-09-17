@@ -148,8 +148,11 @@ public sealed class ReceivingOrderService : IReceivingOrderService
         }
         catch (DbUpdateException)
         {
-            // uq_roi_item (CR-023): a second line for the same item on this document.
-            return TransactionalResult.Failure<ReceivingOrderLineSummary>(TransactionalError.InvalidStateTransition, "DUPLICATE_LINE_ITEM");
+            // uq_roi_item (CR-023): a second line for the same item on this document. docs/13
+            // has no dedicated catalogue code for this case, so the generic
+            // INVALID_STATE_TRANSITION code (TransactionalErrorWriter's default for this error)
+            // is the correct response, not an invented code.
+            return TransactionalResult.Failure<ReceivingOrderLineSummary>(TransactionalError.InvalidStateTransition);
         }
 
         return TransactionalResult.Success(ToLineSummary(line));

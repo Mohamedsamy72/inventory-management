@@ -14,6 +14,11 @@ public enum TransactionalError
     InsufficientStock,
     EmptyDocument,
     ConcurrencyConflict,
+
+    /// <summary>ADR-028/CR-092 - a restaurant's default serving warehouse is missing or
+    /// inactive. Maps to <c>409 SERVING_WAREHOUSE_UNAVAILABLE</c>; the server never falls back
+    /// to another warehouse.</summary>
+    ServingWarehouseUnavailable,
 }
 
 public sealed record TransactionalResult<T>(bool Succeeded, T? Value, TransactionalError Error, string? ErrorDetail = null);
