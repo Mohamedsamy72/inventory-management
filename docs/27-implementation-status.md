@@ -2,7 +2,7 @@
 
 > **Document ID:** SPEC-27
 > **Status:** Live Implementation Register
-> **Current State:** **Backend Phases P0–P14, S1 (backend), and T1 (backend) are all CLOSED**, and **frontend Phases F1, F2, and F3 are all CLOSED (F3 signed off 2026-09-18)**. Full backend suite: 212/212 passing (27 unit, 19 architecture, 166 integration), stable across repeated consecutive runs. Frontend: 33/33 unit tests, all permanent E2E specs green, clean typecheck/lint/production build, verified against a live Development backend. Checkpoint 2 (Identity & Authorization) and Checkpoint 3 (Master Data & Conversions) are both reached. See §25–§27 for the F1–F3 verification ledgers, and §16–§24 for the backend phase ledgers. **Phase F4 (Frontend Receiving & Inventory Workflows, after P8) is next.**
+> **Current State:** **Backend Phases P0–P14, S1 (backend), and T1 (backend) are all CLOSED**, and **frontend Phases F1 through F5 are all CLOSED (F5 signed off 2026-09-18)**. Full backend suite: 215/215 passing (27 unit, 19 architecture, 169 integration), stable across repeated consecutive runs. Frontend: 33/33 unit tests, all permanent E2E specs green, clean typecheck/lint/production build, verified against a live Development backend with real cross-role (Owner/Warehouse Staff/Restaurant Supervisor) manual E2E walkthroughs. Checkpoints 2 through 5 are all reached. See §25–§29 for the F1–F5 verification ledgers, and §16–§24 for the backend phase ledgers. **Phase F6 (Role-Specific Dashboards, after P13) is next.**
 >
 > **Environment note for the next session:** this repo's PostgreSQL 16 instance (`C:\pg-inventory-system\`, port 5433) is portable binaries, not a registered Windows service — it does not survive a machine/session restart on its own. If `dotnet test`'s integration suite fails with "Failed to connect to 127.0.0.1:5433 ... actively refused", start it first: `C:\pg-inventory-system\pgsql\bin\pg_ctl.exe start -D C:\pg-inventory-system\data -l C:\pg-inventory-system\logfile.log -o "-p 5433" -w` (docs/19 §1, docs/33 §4.3).
 > **Plan Authority:** `docs/09-implementation-plan.md` (supersedes `docs/22-implementation-plan.md`).
@@ -44,7 +44,7 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **F2** | Frontend auth & app shell | ✅ **COMPLETE** | All F2 deliverables (login, forgot-password/OTP/reset, session context, per-role nav, authenticated shell) done and verified, including a critical cookie-policy bug found and fixed via real-browser E2E testing. See §26 for full detail. | ✅ Signed off 2026-09-18 |
 | **F3** | Frontend master-data workflows | ✅ **COMPLETE** | All F3 deliverables (categories/units/suppliers/warehouses/restaurants/items screens, quick-add modal, Arabic-normalized search, nested unit conversions) done and verified, including three real bugs found and fixed via live-browser testing. See §27 for full detail. | ✅ Signed off 2026-09-18 |
 | **F4** | Frontend receiving & inventory | ✅ **COMPLETE** | Receiving list/draft editor/submit/verify/reverse and the warehouse stock view done and verified against a live backend, reproducing docs/23 Scenarios 1-2's numerical math exactly end to end. See §28 for full detail. | ✅ Signed off 2026-09-18 |
-| **F5** | Frontend supply workflows | ⏳ Pending | After P11. Highest-value E2E surface. | — |
+| **F5** | Frontend supply workflows | ✅ **COMPLETE** | Multi-item request editor, fulfilment, dispatch, confirmation, and discrepancy views done and verified end-to-end (cross-role: Restaurant Supervisor + Warehouse Staff) against a live backend. Also fixed a real backend access gap affecting F4 too (§29). See §29 for full detail. | ✅ Signed off 2026-09-18 |
 | **F6** | Role-specific dashboards | ⏳ Pending | Zero fake data. | — |
 | **S1** | Security hardening & adversarial regression | ✅ **COMPLETE (backend)** | Headers, U+202E stripping, dependency/secret scans done; TLS/npm audit deferred to deployment/frontend. See §23 for full detail. | ✅ Signed off 2026-09-17 |
 | **T1** | Full automated test sweep | ✅ **COMPLETE (backend)** | Traceability review closed REQ-07 (consumption logging) gap; frontend half pending F1-F6. See §24 for full detail. | ✅ Signed off 2026-09-17 |
@@ -61,7 +61,7 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **2** | Identity & Authorization (P3–P4, F1–F2) | ✅ **REACHED — signed off 2026-09-18** |
 | **3** | Master Data & Conversions (P5–P6, F3) | ✅ **REACHED — signed off 2026-09-18** |
 | **4** | Stock Engine & Receiving (P7–P8, F4) | ✅ **REACHED — signed off 2026-09-18** |
-| **5** | Supply Workflow (P9–P11, F5) | ⏳ Not reached |
+| **5** | Supply Workflow (P9–P11, F5) | ✅ **REACHED — signed off 2026-09-18** |
 | **6** | Full Operational Product (P12–P14, F6) | ⏳ Not reached |
 | **7** | Security & Release (P15–P16, S1, T1, T2, R1) | ⏳ Not reached |
 
@@ -1030,3 +1030,47 @@ Full solution suite (backend): 212/212 passing. Frontend: 33/33 unit tests, all 
 | Visual/RTL screenshot review of the new screens | Same gap already recorded in §25.3/§27.4 - no screenshot tooling wired into this session. |
 
 Full solution suite (backend): 212/212 passing, unchanged by this phase. Frontend: 33/33 unit tests, clean typecheck/lint/build, full manual receiving-lifecycle verification against a live backend with exact numerical confirmation.
+
+## 29. Phase F5 Verification Ledger
+
+**Phase F5 is SIGNED OFF (2026-09-18).** The multi-item supply request editor, fulfilment queue, dispatch, receipt confirmation, and discrepancy views (docs/09 §Phase F5, guide §8.3/§8.4 - "the single most important screen in the product" / "the highest-value E2E surface in the product") are implemented and verified end-to-end against a live Development backend, with a real cross-role walkthrough (Restaurant Supervisor + Warehouse Staff, not just Owner).
+
+### 29.1 A real backend access gap was found and fixed during this phase's own verification
+
+Live-browser testing as an actual Warehouse Staff / Restaurant Supervisor user (not Owner, whose broader permissions had silently masked this through Phases F3 and F4) found that the "طلب جديد" (new supply request) create dialog could never enable its own submit button: `scopedRestaurants` stayed permanently empty because the frontend resolved restaurant/warehouse/supplier/unit names via the `:manage`-gated list endpoints (`GET /api/v1/restaurants`, `/warehouses`, `/suppliers`, `/units`), and Warehouse Staff/Restaurant Supervisor hold **none** of those four `:manage` permissions (docs/03 - all four ❌ for both roles). The 403 was silently swallowed by a `.catch(() => setX([]))`, so the screen degraded to a permanently-empty, permanently-disabled create flow with no error shown - a real defect, not a test artifact.
+
+Fixed (commit `ebb05c3`, ahead of and independent from this phase's own frontend work, since it also retroactively affects Phase F4's receiving screens for the exact same reason) by adding a `GET .../names` endpoint per resource (warehouses, restaurants, suppliers, units), gated only by `RequireAuthorization()` (any authenticated tenant user) rather than the resource's `:manage` policy. Each returns only `id`/`nameArabic`(/`code`) - never `address`/`description` or anything else `:manage` would additionally expose - since a name is not sensitive information within a tenant the caller already belongs to, while the full manage-gated list endpoints are completely unchanged. Two new integration tests (`WarehousesAndRestaurantsEndpointTests`, `UnitsAndSuppliersEndpointTests`) prove a Warehouse Staff/Restaurant Supervisor user can reach `/names` while the full list correctly still 403s them. The frontend's `/receiving`, `/receiving/[id]`, `/supply-requests`, `/supply-requests/[id]`, and `/supplies/[id]` pages were all switched from the manage-gated lists to `/names`.
+
+### 29.2 What was built
+
+- **`/supply-requests`, `/supply-requests/[id]`**: no warehouse selector anywhere (ADR-028) - the create dialog only ever asks for a restaurant (auto-selected when the Supervisor has exactly one in scope), and the resulting request's server-derived `warehouseId` is shown read-only in the header. The editor (Draft: add/remove lines via a dialog, `[ إرسال الطلب الى المخزن ]` disabled at zero lines; read-only once Submitted, with a `[ إلغاء الطلب ]` action) and the fulfilment panel (Submitted/PartiallyFulfilled only, Warehouse Staff: per-line fulfilled-quantity input defaulted to and capped at the *remaining* quantity - `requested − alreadyFulfilled`, which is the only value that is actually valid given docs/09's own partial-fulfilment semantics - with an amber advisory, never a block, when it exceeds the warehouse's live `available` balance per ADR-019) live on the same page, since a Supervisor can never edit once Submitted and Warehouse Staff can never fulfil a Draft. Adding an item already on the request relies entirely on the backend's own CR-023 merge (`AddLineAsync` merges into the existing line for a matching item+unit) rather than reimplementing that detection client-side.
+- **`/supplies`, `/supplies/[id]`**: dispatch is a plain status-transition button with no form - the dispatched quantities are exactly what fulfilment already set, so there is nothing new to enter. Confirmation clamps received quantity to `0..dispatched`, shows a pre-submit dialog summarizing every line where received ≠ dispatched, and submits once with an `X-Idempotency-Key` generated once per page mount (`useState(() => crypto.randomUUID())`), never regenerated on retry (guide §8.4). Deliberately has **no** per-line "reason" field despite the guide's prose mentioning one: the real `ConfirmSupplyLineCommand` contract (verified against the actual backend, not the guide) carries no such field - a variance instead surfaces automatically as a `SupplyReceiptVariance` discrepancy, where a reason is captured at *resolve* time via `/discrepancies/{id}/resolve`, not at confirm time. Backend contract wins over guide prose per this session's standing reconciliation rule; inventing an unsent field would be exactly the UI theater docs/12 §2.3 forbids.
+- **`/discrepancies`**: the four variance types (`ReceivingVariance`, `SupplyReceiptVariance`, `StockCountVariance`, `StockUnavailableAtConfirmation`) in one screen, scoped server-side per docs/03, with a `[ معالجة ]` resolve action requiring a reason.
+- Every list/detail page's document-number cell is now a clickable link to the detail route on **desktop**, not just the mobile card - a gap noticed and fixed retroactively across `/receiving`, `/supply-requests`, and `/supplies` while building this phase (desktop previously had no way to open a row at all).
+
+### 29.3 Verified — executed, output observed
+
+| Check | Command | Result |
+| :--- | :--- | :---: |
+| Backend full suite, twice consecutively | `dotnet test` | ✅ 215/215 (was 212; +2 for the `/names` access tests), both runs |
+| Frontend unit tests | `npx vitest run` | ✅ 33/33 |
+| Type checking | `npx tsc --noEmit` | ✅ clean |
+| Linting | `npm run lint` | ✅ clean |
+| Production build | `npm run build` | ✅ succeeds, 17 total routes |
+| Manual cross-role browser verification against a live Development backend with real seeded Owner/Warehouse-Staff/Restaurant-Supervisor users: Restaurant Supervisor creates and submits a supply request (no warehouse selector visible, confirmed by locator assertion) → Warehouse Staff fulfils and dispatches → Restaurant Supervisor confirms with a deliberate variance (received 8 of dispatched 10) → summary dialog correctly lists the variance → confirm → status becomes `ConfirmedWithDiscrepancy` | One-off Playwright script, deleted after use (same throwaway-fixture pattern as §27.3/§28.2) | ✅ full cross-role flow passes, **zero backend exceptions** |
+| Numerical correctness of the resulting warehouse stock, read back directly via `GET /api/v1/warehouses/{id}/stock` | `curl` against the live backend after the manual flow above | ✅ `100 → 92` - exactly `-8` (confirmed receipt only); dispatch produced zero stock movement, matching the critical business invariant "Dispatch does NOT reduce warehouse stock; confirmed restaurant receipt DOES" |
+| The variance's automatic `SupplyReceiptVariance` discrepancy appears on `/discrepancies` | Same manual walkthrough | ✅ visible immediately after confirm, no manual creation step |
+
+### 29.4 A process note: Arabic text corruption via inline Bash `curl -d`
+
+While seeding verification data directly via `curl` for this phase's manual walkthrough, inline `-d '{"nameArabic":"..."}'.` JSON payloads containing Arabic text were silently corrupted to `???` at the byte level before curl even sent them - not a terminal display artifact, but real mangled data that was actually stored in the database and rendered as `???` in the real browser too. Root cause: Git Bash/Windows console's non-UTF-8 default codepage mangling the inline string literal. Fixed by writing the JSON payload to a file first (a normal file write, which correctly preserves UTF-8) and using `curl --data-binary @file.json` instead of an inline `-d` string. Noted here because it is a real trap for any future session seeding Arabic verification data via shell one-liners on this machine - it produces no error, only wrong data.
+
+### 29.5 Not verified — genuinely out of Phase F5 scope
+
+| Item | Why deferred |
+| :--- | :--- |
+| A permanent, committed E2E spec covering the cross-role supply-request lifecycle | Same gap already recorded in §26.5/§27.4/§28.3 - needs proper seeded E2E fixtures (Owner + Warehouse Staff + Restaurant Supervisor, each with a known password and pre-established scope), natural to add together in Phase T2. |
+| The `PartiallyFulfilled` status path specifically (fulfilling less than the full remaining quantity, leaving a request partially open across two separate `Supply` documents) | The manual walkthrough fulfilled the full requested quantity in one pass; the partial-fulfilment code path (remaining-quantity default/cap logic in the fulfilment panel) was verified by code review against docs/09's documented semantics, not by driving a second, smaller fulfilment through the browser. |
+| Visual/RTL screenshot review of the new screens | Same gap already recorded in §25.3/§27.4/§28.3 - no screenshot tooling wired into this session. |
+
+Full solution suite (backend): 215/215 passing, stable across two consecutive runs. Frontend: 33/33 unit tests, clean typecheck/lint/build, full manual cross-role supply-workflow verification against a live backend with exact numerical confirmation.
