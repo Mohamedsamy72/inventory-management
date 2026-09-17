@@ -108,6 +108,9 @@ public static class DependencyInjection
 
         // Phase 8: receiving (docs/09 8.1-8.13, docs/30 §4 T1/T2/T3).
         services.AddScoped<Application.Receiving.IReceivingOrderService, Receiving.ReceivingOrderService>();
+
+        // Phase 9: multi-item supply requests (docs/09 9.1-9.14, ADR-028). Zero stock effect.
+        services.AddScoped<Application.SupplyRequests.ISupplyRequestService, SupplyRequests.SupplyRequestService>();
         services.AddHostedService<Idempotency.MaintenanceBackgroundService>();
         // Scoped, not Singleton: this handler depends on ICurrentUserService and
         // IPermissionEvaluator, both request-scoped. A Singleton registration here would repeat

@@ -43,4 +43,34 @@ public sealed class SupplyRequestItem : Entity
 
         FulfilledQuantity = newTotal;
     }
+
+    /// <summary>Draft-only line edit (task 9.3) - the service enforces the Draft-only rule, since
+    /// this entity has no reference back to its parent's status.</summary>
+    public void UpdateRequest(decimal requestedQuantity, Guid unitId, decimal baseQuantity, string? notes)
+    {
+        if (requestedQuantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(requestedQuantity), requestedQuantity, "Requested quantity must be positive.");
+        }
+
+        RequestedQuantity = requestedQuantity;
+        UnitId = unitId;
+        BaseQuantity = baseQuantity;
+        Notes = notes;
+    }
+
+    /// <summary>Task 9.4 - a second `AddLineAsync` call for an item already on this Draft request
+    /// merges into the existing line (adds the quantities) instead of being rejected, since
+    /// `uq_sri_item` (CR-023) makes a genuine duplicate row impossible anyway.</summary>
+    public void MergeAdditionalQuantity(decimal additionalRequestedQuantity, decimal additionalBaseQuantity, string? notes)
+    {
+        if (additionalRequestedQuantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(additionalRequestedQuantity), additionalRequestedQuantity, "Requested quantity must be positive.");
+        }
+
+        RequestedQuantity += additionalRequestedQuantity;
+        BaseQuantity += additionalBaseQuantity;
+        Notes = notes ?? Notes;
+    }
 }

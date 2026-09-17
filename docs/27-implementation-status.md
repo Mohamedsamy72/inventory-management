@@ -32,8 +32,8 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **P6** | Unit conversion system | ✅ **COMPLETE** | All 8 tasks (6.1–6.8) done and verified. See §14 for full detail. | ✅ Signed off 2026-09-17 |
 | **P7** | Stock engine, transactions, concurrency, idempotency | ✅ **COMPLETE** | All 15 tasks (7.1–7.15) done and verified. No business endpoint exposed (by design). See §15 for full detail. | ✅ Signed off 2026-09-17 |
 | **P8** | Receiving & warehouse stock ledger | ✅ **COMPLETE** | All 13 tasks (8.1–8.13) done and verified. See §16 for full detail. | ✅ Signed off 2026-09-17 |
-| **P9** | Multi-item supply requests | ⏳ **Next** | Unblocked — OD-008 closed (ADR-028). Warehouse derived server-side; over-post security test mandatory. | — |
-| **P10** | Fulfilment & dispatch | ⏳ Pending | Must write zero ledger rows. | — |
+| **P9** | Multi-item supply requests | ✅ **COMPLETE** | All 14 tasks (9.1–9.14) done and verified. See §17 for full detail. | ✅ Signed off 2026-09-17 |
+| **P10** | Fulfilment & dispatch | ⏳ **Next** | Must write zero ledger rows. | — |
 | **P11** | Restaurant receipt confirmation | ⏳ Pending | Only stock-deducting path; all-or-nothing per document. | — |
 | **P12** | Discrepancies & reconciliation | ⏳ Pending | Resolution must never post a movement. | — |
 | **P13** | Physical stock counts & adjustments | ⏳ Pending | In-transit exclusion (ADR-018); server-side blind counting. | — |
@@ -595,3 +595,40 @@ The repository's NuGet vulnerability audit (`NU1900`-`NU1904`) began failing out
 | A dedicated reversal-after-verify test (reversing a `Verified`, not just a `Submitted`, order) | The `ReverseAsync` code path treats `Reconciled` lines uniformly with unreconciled ones (net-posted-quantity math covers both), and the existing reversal test already exercises the underlying `IStockPostingService` reconciliation-movement path that a post-verify reversal would also use - a dedicated case would strengthen confidence further and is a reasonable first test to add if Phase 9+ work touches this code again. |
 | Insufficient-stock-on-reverse (ADR-021/task 8.8, reversal breaching zero) | Requires an intervening consumption (Phase 11, not built yet) between submit and reverse - no such scenario can exist until restaurant receipt confirmation exists. |
 | A frontend-driven receiving workflow | Frontend phases (F1-F6) have not started this session. |
+
+## 17. Phase 9 Verification Ledger
+
+**Phase 9 is SIGNED OFF (2026-09-17).** All 14 tasks (`docs/09` §Phase 9, 9.1–9.14) implemented and verified end-to-end over real HTTP. **Zero stock effect** end to end, as the phase requires - `ISupplyRequestService` never calls `IStockPostingService`.
+
+### 17.1 What was built
+
+- **`ISupplyRequestService`/`SupplyRequestService`** (tasks 9.1-9.7): orchestrates the `SupplyRequest`/`SupplyRequestItem` state machine already built in Phase 2. `AddLineAsync` resolves the base quantity through `IUnitConversionResolver` (task 9.5) - the established Phase 6 path, unlike Phase 8's receiving service, which had hand-rolled its own `ItemUnitConversions` lookup instead of reusing this resolver; Phase 8 was left as-is (out of scope for an unrelated refactor) but Phase 9 uses the correct existing abstraction from the start. A second `AddLineAsync` call for an item already on the Draft (task 9.4) MERGES into the existing line via a new `SupplyRequestItem.MergeAdditionalQuantity` domain method when the unit matches, and is rejected when it doesn't (summing quantities across two different units would silently corrupt the total - `uq_sri_item`/CR-023 makes a genuine duplicate row impossible either way). `SubmitAsync` (task 9.6) requires >= 1 line and every referenced item still `IsActive`, and never touches the stock ledger.
+- **ADR-028 server-derived serving warehouse** (tasks 9.8-9.8b): `CreateSupplyRequestCommand` has no `WarehouseId` property at all - the handler reads `restaurants.default_serving_warehouse_id`, verifies it is `Active`, and stores the resolved id on the request at creation time only. A later change to the restaurant's default (new `IRestaurantService.ChangeServingWarehouseAsync`/`PUT /restaurants/{id}/serving-warehouse`, added this phase since Phase 5 had built the domain method `Restaurant.ChangeServingWarehouse` but never wired an endpoint to it) does not retroactively redirect any existing request (SW-8) - proven directly, not just asserted.
+- **`IScopeGuard`'s second real consumer** (task 9.9): Restaurant Supervisor is checked against `GetAuthorizedRestaurantIdsAsync` for every route touching a specific restaurant; Owner/Admin are unrestricted within the tenant (docs/03's Supply Requests permission row). Warehouse Staff holds `view`/`fulfill` but not `create`, so it never reaches this check via these endpoints at all - the fulfilment queue view (Phase 10) is where its own warehouse-scope check belongs.
+- **`SupplyRequestsEndpoints`**: `POST /supply-requests`, item add/update/remove (Draft only), `/submit`, `/cancel`. None of the mutating routes require an idempotency key - unlike Phase 8, nothing here posts to the stock ledger, so there is no non-idempotent side effect to protect against a duplicate request beyond the ordinary `uq_req_company_doc`/`uq_sri_item` constraints already in place.
+- **Bug fix carried over from Phase 8**: `TransactionalErrorWriter` was silently discarding `TransactionalResult.ErrorDetail`, so a real docs/13 catalogue code (`CONVERSION_NOT_DEFINED`) was being returned to clients as the generic `INVALID_STATE_TRANSITION`. Fixed before starting Phase 9's own `AddLineAsync`, which hits the identical code path; also added `TransactionalError.ServingWarehouseUnavailable` (→ `409 SERVING_WAREHOUSE_UNAVAILABLE`), needed by `CreateDraftAsync`.
+- **`SupplyRequestTests`** (tasks 9.11-9.14): 10 new integration tests over real HTTP.
+
+### 17.2 Verified — executed, output observed
+
+| Check | Command / Method | Result |
+| :--- | :--- | :---: |
+| Multi-line draft create, add item, submit - stock ledger row count for the test's own company is identical before and after (scoped to the test's own tenant, not a global count, since other test classes post to the ledger concurrently under parallel xUnit execution) | `SupplyRequestTests.Multi_Line_Draft_Creates_And_Submits_With_Zero_Stock_Effect` | ✅ |
+| Adding the same item twice merges into one line (`15` total, not two rows) | `SupplyRequestTests.Adding_The_Same_Item_Twice_Merges_Into_One_Line` | ✅ |
+| Editing a line after submit is `400 INVALID_STATE_TRANSITION` | `SupplyRequestTests.Editing_A_Line_Outside_Draft_Is_Rejected` | ✅ |
+| Submitting an empty request is `400 EMPTY_DOCUMENT` | `SupplyRequestTests.Submitting_An_Empty_Request_Is_Rejected` | ✅ |
+| Submitting with a since-deactivated item is rejected | `SupplyRequestTests.Submitting_With_An_Inactive_Item_Is_Rejected` | ✅ |
+| A restaurant whose serving warehouse is deactivated returns `409 SERVING_WAREHOUSE_UNAVAILABLE` and creates no row (task 9.13) | `SupplyRequestTests.Restaurant_With_No_Active_Serving_Warehouse_Returns_409_And_Creates_Nothing` | ✅ |
+| Changing a restaurant's default serving warehouse after a request exists leaves that request pointing at the ORIGINAL warehouse (SW-8, task 9.14) | `SupplyRequestTests.Changing_The_Restaurant_Default_Warehouse_Does_Not_Redirect_Existing_Requests` | ✅ |
+| Restaurant Supervisor scoped to one restaurant gets `403` creating for another, `201` creating for their own | `SupplyRequestTests.Restaurant_Supervisor_Cannot_Create_For_Another_Restaurant` | ✅ |
+| **Security test (task 9.12, ADR-028):** posting `"warehouseId": "<another warehouse>"` has no effect - asserted on the PERSISTED row via a direct DB read, not merely the response | `SupplyRequestTests.An_Over_Posted_WarehouseId_Has_No_Effect_On_The_Persisted_Row` | ✅ |
+| Cross-restaurant access with zero assigned scope is `403` | `SupplyRequestTests.Cross_Restaurant_View_Is_Forbidden_For_Restaurant_Supervisor` | ✅ |
+| Full solution suite, multiple consecutive runs | `dotnet test` | ✅ 170/170 (27 unit, 19 architecture, 124 integration), every run |
+
+### 17.3 Not verified — genuinely out of Phase 9 scope
+
+| Item | Why deferred |
+| :--- | :--- |
+| Fulfilment-queue warehouse-scope enforcement for Warehouse Staff | That view belongs to Phase 10 (`POST /supply-requests/{id}/fulfill` and the fulfilment queue), which does not exist yet. |
+| `PartiallyFulfilled`/`Fulfilled` status transitions | `SupplyRequest.UpdateFulfillmentStatus` is Phase 10's own responsibility - no fulfilment endpoint exists yet to drive it. |
+| A frontend-driven supply-request workflow | Frontend phases (F1-F6) have not started this session. |

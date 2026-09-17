@@ -17,6 +17,12 @@ public interface IRestaurantService
 
     Task<MasterDataResult<RestaurantSummary>> UpdateAsync(Guid id, UpdateRestaurantCommand command, CancellationToken cancellationToken);
 
+    /// <summary>ADR-028 SW-8: changes ONLY this restaurant's configuration going forward - any
+    /// supply request already created keeps pointing at the warehouse resolved at its own
+    /// creation time (docs/09 task 9.8b), since that resolution is copied onto the request, not
+    /// looked up live.</summary>
+    Task<MasterDataResult<RestaurantSummary>> ChangeServingWarehouseAsync(Guid id, Guid warehouseId, CancellationToken cancellationToken);
+
     Task<MasterDataResult<RestaurantSummary>> DeactivateAsync(Guid id, CancellationToken cancellationToken);
 
     Task<MasterDataResult<RestaurantSummary>> ReactivateAsync(Guid id, CancellationToken cancellationToken);

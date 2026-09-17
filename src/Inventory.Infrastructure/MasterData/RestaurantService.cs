@@ -102,6 +102,34 @@ public sealed class RestaurantService : IRestaurantService
             : MasterDataResult.Success(ToSummary(restaurant));
     }
 
+    public async Task<MasterDataResult<RestaurantSummary>> ChangeServingWarehouseAsync(Guid id, Guid warehouseId, CancellationToken cancellationToken)
+    {
+        Restaurant? restaurant = await _context.Restaurants.FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+        if (restaurant is null)
+        {
+            return MasterDataResult.Failure<RestaurantSummary>(MasterDataError.NotFound);
+        }
+
+        bool warehouseIsActive = await _context.Warehouses
+            .AnyAsync(w => w.Id == warehouseId && w.Status == WarehouseStatus.Active, cancellationToken);
+        if (!warehouseIsActive)
+        {
+            return MasterDataResult.Failure<RestaurantSummary>(MasterDataError.ServingWarehouseUnavailable);
+        }
+
+        Guid oldWarehouseId = restaurant.DefaultServingWarehouseId;
+        restaurant.ChangeServingWarehouse(warehouseId);
+
+        _auditLogger.Record(new AuditEntry(
+            "RESTAURANT_SERVING_WAREHOUSE_CHANGED", nameof(Restaurant), restaurant.Id,
+            $"تم تغيير مستودع الخدمة للفرع: {restaurant.NameArabic}",
+            OldValues: new { WarehouseId = oldWarehouseId }, NewValues: new { WarehouseId = warehouseId }, Domain.Enums.AuditResult.Success,
+            RestaurantId: restaurant.Id));
+
+        await _context.SaveChangesAsync(cancellationToken);
+        return MasterDataResult.Success(ToSummary(restaurant));
+    }
+
     public Task<MasterDataResult<RestaurantSummary>> DeactivateAsync(Guid id, CancellationToken cancellationToken) =>
         SetActiveAsync(id, active: false, cancellationToken);
 
