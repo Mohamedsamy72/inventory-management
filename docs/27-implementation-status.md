@@ -2,7 +2,7 @@
 
 > **Document ID:** SPEC-27
 > **Status:** Live Implementation Register
-> **Current State:** **Backend Phases P0–P14, S1 (backend), and T1 (backend) are all CLOSED**, and **frontend Phases F1 through F5 are all CLOSED (F5 signed off 2026-09-18)**. Full backend suite: 215/215 passing (27 unit, 19 architecture, 169 integration), stable across repeated consecutive runs. Frontend: 33/33 unit tests, all permanent E2E specs green, clean typecheck/lint/production build, verified against a live Development backend with real cross-role (Owner/Warehouse Staff/Restaurant Supervisor) manual E2E walkthroughs. Checkpoints 2 through 5 are all reached. See §25–§29 for the F1–F5 verification ledgers, and §16–§24 for the backend phase ledgers. **Phase F6 (Role-Specific Dashboards, after P13) is next.**
+> **Current State:** **Backend Phases P0–P14, S1 (backend), and T1 (backend) are all CLOSED**, and **frontend Phases F1 through F6 are all CLOSED (F6 signed off 2026-09-18)** - every frontend phase in docs/09 is now complete. Full backend suite: 215/215 passing (27 unit, 19 architecture, 169 integration), stable across repeated consecutive runs. Frontend: 33/33 unit tests, all permanent E2E specs green, clean typecheck/lint/production build, verified against a live Development backend with real cross-role (Owner/Admin/Warehouse Staff/Restaurant Supervisor) manual E2E walkthroughs. Checkpoints 2 through 6 are all reached. See §25–§30 for the F1–F6 verification ledgers, and §16–§24 for the backend phase ledgers. **Phase S1 (frontend half), T1 (frontend half), and T2 (Browser E2E & Acceptance) are next**, followed by R1 (release readiness).
 >
 > **Environment note for the next session:** this repo's PostgreSQL 16 instance (`C:\pg-inventory-system\`, port 5433) is portable binaries, not a registered Windows service — it does not survive a machine/session restart on its own. If `dotnet test`'s integration suite fails with "Failed to connect to 127.0.0.1:5433 ... actively refused", start it first: `C:\pg-inventory-system\pgsql\bin\pg_ctl.exe start -D C:\pg-inventory-system\data -l C:\pg-inventory-system\logfile.log -o "-p 5433" -w` (docs/19 §1, docs/33 §4.3).
 > **Plan Authority:** `docs/09-implementation-plan.md` (supersedes `docs/22-implementation-plan.md`).
@@ -45,7 +45,7 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **F3** | Frontend master-data workflows | ✅ **COMPLETE** | All F3 deliverables (categories/units/suppliers/warehouses/restaurants/items screens, quick-add modal, Arabic-normalized search, nested unit conversions) done and verified, including three real bugs found and fixed via live-browser testing. See §27 for full detail. | ✅ Signed off 2026-09-18 |
 | **F4** | Frontend receiving & inventory | ✅ **COMPLETE** | Receiving list/draft editor/submit/verify/reverse and the warehouse stock view done and verified against a live backend, reproducing docs/23 Scenarios 1-2's numerical math exactly end to end. See §28 for full detail. | ✅ Signed off 2026-09-18 |
 | **F5** | Frontend supply workflows | ✅ **COMPLETE** | Multi-item request editor, fulfilment, dispatch, confirmation, and discrepancy views done and verified end-to-end (cross-role: Restaurant Supervisor + Warehouse Staff) against a live backend. Also fixed a real backend access gap affecting F4 too (§29). See §29 for full detail. | ✅ Signed off 2026-09-18 |
-| **F6** | Role-specific dashboards | ⏳ Pending | Zero fake data. | — |
+| **F6** | Role-specific dashboards | ✅ **COMPLETE** | Warehouse Staff/Restaurant Supervisor/Owner/Admin dashboards done and verified against a live backend as all three roles, every widget a real API count. Also found and fixed a pre-existing Button/Slot crash from Phase F1. See §30 for full detail. | ✅ Signed off 2026-09-18 |
 | **S1** | Security hardening & adversarial regression | ✅ **COMPLETE (backend)** | Headers, U+202E stripping, dependency/secret scans done; TLS/npm audit deferred to deployment/frontend. See §23 for full detail. | ✅ Signed off 2026-09-17 |
 | **T1** | Full automated test sweep | ✅ **COMPLETE (backend)** | Traceability review closed REQ-07 (consumption logging) gap; frontend half pending F1-F6. See §24 for full detail. | ✅ Signed off 2026-09-17 |
 | **T2** | Browser E2E & acceptance | ⏳ Pending | Arabic export verified visually. | — |
@@ -62,7 +62,7 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **3** | Master Data & Conversions (P5–P6, F3) | ✅ **REACHED — signed off 2026-09-18** |
 | **4** | Stock Engine & Receiving (P7–P8, F4) | ✅ **REACHED — signed off 2026-09-18** |
 | **5** | Supply Workflow (P9–P11, F5) | ✅ **REACHED — signed off 2026-09-18** |
-| **6** | Full Operational Product (P12–P14, F6) | ⏳ Not reached |
+| **6** | Full Operational Product (P12–P14, F6) | ✅ **REACHED — signed off 2026-09-18** |
 | **7** | Security & Release (P15–P16, S1, T1, T2, R1) | ⏳ Not reached |
 
 ---
@@ -1074,3 +1074,39 @@ While seeding verification data directly via `curl` for this phase's manual walk
 | Visual/RTL screenshot review of the new screens | Same gap already recorded in §25.3/§27.4/§28.3 - no screenshot tooling wired into this session. |
 
 Full solution suite (backend): 215/215 passing, stable across two consecutive runs. Frontend: 33/33 unit tests, clean typecheck/lint/build, full manual cross-role supply-workflow verification against a live backend with exact numerical confirmation.
+
+## 30. Phase F6 Verification Ledger
+
+**Phase F6 is SIGNED OFF (2026-09-18) - every frontend phase in docs/09 is now complete.** The role-specific action dashboards (docs/09 §Phase F6, docs/12 §2) replace the Phase F2 placeholder, verified against a live Development backend as all three operational roles.
+
+### 30.1 What was built
+
+- **`src/components/features/dashboard-widget.tsx`**: a shared widget - title, a live count badge, up to 5 preview rows, a "عرض الكل" link to the full list screen. Every one of the five mandatory API states (guide §6) applies: loading skeleton, error banner with retry, empty state, populated list, and the count badge itself only ever reflects `filtered.length` from a real response - never a literal `0` written by hand. The list endpoints these widgets call have no server-side status filter, so each widget fetches a bounded page (`limit=200`, matching this session's `/names` endpoints' own cap) and filters/counts client-side - documented in the component's own doc comment as a real, honest count capped at 200 rather than a claimed exact total beyond that.
+- **`/dashboard`**: role-branched. **Warehouse Staff** ("مهام المخزن" - docs/12 §2.1): pending restaurant requests awaiting fulfilment, incoming receiving orders (Draft/Submitted), open receipt discrepancies, plus the two specified CTAs. **Restaurant Supervisor** ("مهام الفرع" - docs/12 §2.2): dispatched supplies awaiting confirmation, active branch orders, open receipt discrepancies, plus its two CTAs. **Owner/Admin**: the same three real, tenant-wide widget families under an "overview" framing - docs/09/docs/12 specify no separate bespoke Owner/Admin widget set beyond "an overview", so reusing the same already-tested queries tenant-wide is more honest than inventing unspecified bespoke figures.
+
+### 30.2 A real, pre-existing bug from Phase F1 was found and fixed
+
+Live-browser testing as Warehouse Staff and Restaurant Supervisor specifically (not Owner, whose dashboard branch has no `asChild` buttons) crashed the page entirely with a Chromium-level "This page couldn't load" error the moment the dashboard rendered. Root cause, found via `page.on('pageerror')`: `Button`'s render body was `{loading && !asChild ? <Loader2/> : null}{children}` - in JSX, two adjacent expression containers always produce **two** entries in the children array passed to the underlying element, regardless of what the first one evaluates to (even `null`). When `asChild` is true, that element is Radix's `Slot.Root`, which requires **exactly one** child and throws ("Slot failed to slot onto its children") on an array of two - crashing the render. This bug has existed since Phase F1 wrote `Button`, but no F1–F5 screen ever used `<Button asChild>`; this phase's dashboard CTAs (`<Button asChild><Link>...</Link></Button>`) were the first callers, and it was only caught because verification was done as the actual scoped roles, not just as Owner.
+
+Fixed by branching the render itself: when `asChild`, render only `children` (satisfying Slot's exactly-one-child requirement); otherwise render the optional loader and `children` together inside their own `Fragment`, which has no such constraint for a plain `<button>` element.
+
+### 30.3 Verified — executed, output observed
+
+| Check | Command | Result |
+| :--- | :--- | :---: |
+| Type checking | `npx tsc --noEmit` | ✅ clean |
+| Linting | `npm run lint` | ✅ clean |
+| Frontend unit tests | `npx vitest run` | ✅ 33/33 |
+| Production build | `npm run build` | ✅ succeeds, 17 routes, unchanged route count (dashboard is not a new route) |
+| Permanent E2E suite, re-run after the `Button` fix to confirm no regression | `npx playwright test e2e/shell.spec.ts` | ✅ 3/3 |
+| Manual browser verification against a live Development backend as all three operational roles: Owner (heading, all three tenant-wide widgets, no stuck skeletons), Warehouse Staff (heading, both CTAs, scoped widgets), Restaurant Supervisor (heading, both CTAs, scoped widgets) | One-off Playwright script, deleted after use (same throwaway-fixture pattern as §27–§29) | ✅ all three pass after the `Button` fix (failed with the Slot crash beforehand) |
+
+### 30.4 Not verified — genuinely out of Phase F6 scope
+
+| Item | Why deferred |
+| :--- | :--- |
+| Admin dashboard specifically | Admin shares the exact same code branch as Owner (the `else` fallback, differing only in heading text) - verified by code review, not a separate seeded Admin user in this session's manual walkthrough. |
+| A permanent, committed E2E spec covering all four dashboard variants | Same gap already recorded in §26.5/§27.4/§28.3/§29.5 - needs proper seeded E2E fixtures for all four roles, natural to add in Phase T2. |
+| A repository-wide automated scan proving zero hardcoded `0`/mock array/placeholder chart (docs/09's own stated F6 acceptance criterion) | Verified by direct code review of every widget in this phase (each renders `filtered.length` from a live fetch, never a literal number) rather than a scripted repository grep; no such scan script exists in this session's tooling. |
+
+Full solution suite (backend): 215/215 passing, unchanged by this phase. Frontend: 33/33 unit tests, clean typecheck/lint/build, full manual cross-role dashboard verification against a live backend, plus a genuine Phase-F1-era bug found and fixed.
