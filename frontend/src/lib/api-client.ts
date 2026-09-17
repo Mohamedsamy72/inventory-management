@@ -47,7 +47,7 @@ function isMutatingMethod(method: string): boolean {
   return method !== 'GET' && method !== 'HEAD';
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, skipAuthRedirect = false): Promise<T> {
   const method = (init.method ?? 'GET').toUpperCase();
   const headers = new Headers(init.headers);
 
@@ -67,11 +67,20 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
 
   if (response.status === 401) {
-    if (typeof window !== 'undefined') {
+    // A 401 from the login endpoint itself is "wrong credentials", not "session expired" -
+    // the caller (LoginPage) renders its own inline error and must not be yanked away by a
+    // hard navigation before it gets the chance to.
+    if (!skipAuthRedirect && typeof window !== 'undefined') {
       window.location.assign('/login');
     }
 
-    throw new ApiError(401, 'UNAUTHENTICATED', 'يجب تسجيل الدخول للمتابعة', '');
+    const problem: ProblemDetails | null = await response.json().catch(() => null);
+    throw new ApiError(
+      401,
+      problem?.code ?? 'UNAUTHENTICATED',
+      problem?.messageAr ?? 'يجب تسجيل الدخول للمتابعة',
+      problem?.correlationId ?? '',
+    );
   }
 
   if (!response.ok) {
@@ -95,16 +104,27 @@ export interface RequestOptions {
   /** e.g. a per-form-instance idempotency key (guide section 8.4) - never regenerated on retry. */
   headers?: HeadersInit;
   signal?: AbortSignal;
+  /** True for pre-auth calls (login) whose own 401 is "wrong credentials", not "session expired". */
+  skipAuthRedirect?: boolean;
 }
 
 export const apiClient = {
-  get: <T>(path: string, options?: RequestOptions): Promise<T> => request<T>(path, options),
+  get: <T>(path: string, options?: RequestOptions): Promise<T> => request<T>(path, options, options?.skipAuthRedirect),
 
   post: <T>(path: string, body?: unknown, options?: RequestOptions): Promise<T> =>
-    request<T>(path, { ...options, method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) }),
+    request<T>(
+      path,
+      { ...options, method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) },
+      options?.skipAuthRedirect,
+    ),
 
   put: <T>(path: string, body?: unknown, options?: RequestOptions): Promise<T> =>
-    request<T>(path, { ...options, method: 'PUT', body: body === undefined ? undefined : JSON.stringify(body) }),
+    request<T>(
+      path,
+      { ...options, method: 'PUT', body: body === undefined ? undefined : JSON.stringify(body) },
+      options?.skipAuthRedirect,
+    ),
 
-  delete: <T>(path: string, options?: RequestOptions): Promise<T> => request<T>(path, { ...options, method: 'DELETE' }),
+  delete: <T>(path: string, options?: RequestOptions): Promise<T> =>
+    request<T>(path, { ...options, method: 'DELETE' }, options?.skipAuthRedirect),
 };
