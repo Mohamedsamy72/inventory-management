@@ -2,7 +2,7 @@
 
 > **Document ID:** SPEC-27
 > **Status:** Live Implementation Register
-> **Current State:** **Phase 1 through Phase 7 CLOSED (2026-09-17).** Backend `dotnet build -warnaserror` -> 0 errors, 0 warnings across all 7 projects; `dotnet test` -> 152/152 passing (27 unit, 19 architecture, 106 integration), confirmed stable across repeated consecutive runs. Frontend verified green (typecheck, lint, tests, production build) as of Phase 1. The initial migration (33 entities, composite tenant FKs throughout, `xmin` concurrency, append-only triggers, `audit_logs` partitioning, the full docs/29 §5 index plan, role/permission seed data) applies cleanly to an empty database and is proven by real execution — not just review — against this repo's own PostgreSQL instance. Phase 3 also fixed a critical, phase-independent bug in the tenant query filter introduced in Phase 2 — see §11.2 row 1; it affects every tenant-scoped query in the system, not just auth. Phase 5 also found and fixed a CSRF gap spanning every Phase 4/5 mutating endpoint — see §13.2. Phase 6 found and fixed a second Phase 2 schema bug (a non-partial unique index that would have made ADR-023 corrections impossible) — see §14.2. Phase 7 completes all stock-engine/concurrency/idempotency infrastructure with **no business endpoint exposed yet**, exactly as docs/09 specifies. **Phase 8 (Receiving & Warehouse Stock Ledger) is next.**
+> **Current State:** **Backend Phases P0–P14, S1 (backend), and T1 (backend) are all CLOSED**, and **frontend Phases F1, F2, and F3 are all CLOSED (F3 signed off 2026-09-18)**. Full backend suite: 212/212 passing (27 unit, 19 architecture, 166 integration), stable across repeated consecutive runs. Frontend: 33/33 unit tests, all permanent E2E specs green, clean typecheck/lint/production build, verified against a live Development backend. Checkpoint 2 (Identity & Authorization) and Checkpoint 3 (Master Data & Conversions) are both reached. See §25–§27 for the F1–F3 verification ledgers, and §16–§24 for the backend phase ledgers. **Phase F4 (Frontend Receiving & Inventory Workflows, after P8) is next.**
 >
 > **Environment note for the next session:** this repo's PostgreSQL 16 instance (`C:\pg-inventory-system\`, port 5433) is portable binaries, not a registered Windows service — it does not survive a machine/session restart on its own. If `dotnet test`'s integration suite fails with "Failed to connect to 127.0.0.1:5433 ... actively refused", start it first: `C:\pg-inventory-system\pgsql\bin\pg_ctl.exe start -D C:\pg-inventory-system\data -l C:\pg-inventory-system\logfile.log -o "-p 5433" -w` (docs/19 §1, docs/33 §4.3).
 > **Plan Authority:** `docs/09-implementation-plan.md` (supersedes `docs/22-implementation-plan.md`).
@@ -42,7 +42,7 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **P16** | Reporting & analytics | 🚫 **DEFERRED** | ADR-029. Not scheduled. `docs/17 §4` extension points remain **binding on the core phases**. | — |
 | **F1** | Frontend shell & design system | ✅ **COMPLETE** | All 12 tasks (F1.1–F1.12) done and verified. See §25 for full detail. | ✅ Signed off 2026-09-17 |
 | **F2** | Frontend auth & app shell | ✅ **COMPLETE** | All F2 deliverables (login, forgot-password/OTP/reset, session context, per-role nav, authenticated shell) done and verified, including a critical cookie-policy bug found and fixed via real-browser E2E testing. See §26 for full detail. | ✅ Signed off 2026-09-18 |
-| **F3** | Frontend master-data workflows | ⏳ Pending | After P5. | — |
+| **F3** | Frontend master-data workflows | ✅ **COMPLETE** | All F3 deliverables (categories/units/suppliers/warehouses/restaurants/items screens, quick-add modal, Arabic-normalized search, nested unit conversions) done and verified, including three real bugs found and fixed via live-browser testing. See §27 for full detail. | ✅ Signed off 2026-09-18 |
 | **F4** | Frontend receiving & inventory | ⏳ Pending | After P8. | — |
 | **F5** | Frontend supply workflows | ⏳ Pending | After P11. Highest-value E2E surface. | — |
 | **F6** | Role-specific dashboards | ⏳ Pending | Zero fake data. | — |
@@ -59,7 +59,7 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | :---: | :--- | :---: |
 | **1** | Architecture & Database (P1–P2) | ✅ **REACHED — signed off 2026-09-17** |
 | **2** | Identity & Authorization (P3–P4, F1–F2) | ✅ **REACHED — signed off 2026-09-18** |
-| **3** | Master Data & Conversions (P5–P6, F3) | ⏳ Not reached |
+| **3** | Master Data & Conversions (P5–P6, F3) | ✅ **REACHED — signed off 2026-09-18** |
 | **4** | Stock Engine & Receiving (P7–P8, F4) | ⏳ Not reached |
 | **5** | Supply Workflow (P9–P11, F5) | ⏳ Not reached |
 | **6** | Full Operational Product (P12–P14, F6) | ⏳ Not reached |
@@ -946,3 +946,50 @@ Once the cookie fix let a real login POST actually reach the backend, the same n
 | Dashboard/Audit page real content (KPIs, activity feed, filterable log table) | Both are intentionally placeholder shells for this phase — Checkpoint boundaries assign real dashboard/audit content to later master-data/reporting phases. |
 
 Full solution suite (backend): 211/211 passing, stable across two consecutive runs. Frontend: 33/33 unit tests, 3/3 E2E, clean typecheck/lint/build.
+
+## 27. Phase F3 Verification Ledger
+
+**Phase F3 is SIGNED OFF (2026-09-18).** The four master-data screens (docs/09 §Phase F3, guide §8.2) are implemented and verified end-to-end against a live Development backend with a real seeded Owner user, not just against mocks.
+
+### 27.1 What was built
+
+- **`src/lib/arabic-search.ts`**: `normalizeArabicSearch` - strips diacritics/tatweel, unifies alef forms, unifies `ة`→`ه` and `ى`→`ي` (docs/31 §4.2.3), applied to the Items search box before it reaches the server, matching how the server normalizes `name_normalized` on its side.
+- **`src/lib/use-keyset-list.ts`**: a shared hook wrapping the backend's forward-only `KeysetPage<T>` (`{ items, nextCursor }`) with a client-side cursor stack, giving every list screen a working "previous" button even though the server only ever returns a forward cursor.
+- **`src/components/features/simple-master-data-screen.tsx`**: one shared list+dialog CRUD screen for Categories, Units, Suppliers, and Warehouses - genuinely identical in shape (`nameArabic` + a few optional fields + an active/inactive toggle via deactivate/reactivate, never a hard delete). A `createOnly` field flag handles Warehouse's immutable `code`.
+- **`src/components/features/restaurants-screen.tsx`**: its own screen, not a `SimpleMasterDataScreen` instance, because a restaurant's form genuinely differs - a required serving-warehouse `Select` at creation (ADR-028's `defaultServingWarehouseId`), and an existing restaurant's serving warehouse can be changed independently via its own `PUT .../serving-warehouse` endpoint.
+- **`src/components/features/quick-add-modal.tsx`**: the guide §5.3 pattern - a small nested dialog that creates a Category or Unit inline and hands the created entity back to the caller for auto-select, with zero navigation and zero loss of the item form's other field values.
+- **`src/components/features/item-conversions.tsx`**: the unit-conversion sub-section nested inside the item edit dialog (task 6.1) - the target unit is always the item's current base unit, resolved server-side (ADR-023); the form never shows or sends a "to" unit.
+- **Pages**: `/master-data` (Categories/Units, tabbed), `/suppliers`, `/locations` (Warehouses/Restaurants, tabbed), `/items` (search, quick-add, read-only generated code, nested conversions) - the exact four routes `nav-items.ts` already pointed to from Phase F2.
+- **shadcn `Tabs`/`Label`** added (`npx shadcn add tabs label`) - the only two primitives F1 hadn't already pulled in that F3 needed.
+
+### 27.2 Three real bugs were found and fixed during this phase's own verification
+
+All three were invisible to typecheck, lint, unit tests, and the production build - they only surfaced once a real Owner user (seeded directly via `AuthTestHelpers` against the dev database, then deleted from the test tree) drove the actual screens in a real browser against a live backend.
+
+1. **`api-client.ts` crashed on every successful login.** `request()` only special-cased a `204` empty body; several endpoints - starting with login's own `Results.Ok()` with no value - return `200` with an equally empty body, and `.json()` on that throws a raw `SyntaxError`. The login page's `catch` block then showed its generic non-`ApiError` fallback text instead of navigating to `/dashboard`. This is the exact gap §26.5 flagged as unverified ("a successful login → `/dashboard` E2E case") - it went undetected through the whole of Phase F2 because that phase's only E2E case was the invalid-credentials path. Fixed by reading the response body as text first and only parsing it as JSON when non-empty, regardless of status code.
+2. **Nested quick-add forms silently double-submitted the outer form.** `QuickAddModal` and `ItemConversions` each render their own `<form onSubmit>` nested inside the item dialog's outer `<form>`. Radix portals their `DialogContent` to `document.body`, but React re-dispatches a portaled element's synthetic events by walking the **React component tree**, not the DOM tree - so submitting the nested form also fired the outer form's `onSubmit`, submitting the item with whatever it currently held (e.g. an empty `baseUnitId` mid-selection), which crashed the backend with an unhandled `JsonException` (an empty string is not a valid `Guid`). Fixed with `event.stopPropagation()` in both nested submit handlers.
+3. **A quick-added Category/Unit selection got silently reset.** After fixing bug 2, `onCreated` correctly called `setBaseUnitId(created.id)` - but Radix Select's hidden native `<select>` (kept in sync for autofill/native-form semantics) fired a stray `onValueChange('')` when the newly quick-added `<option>` mounted, clobbering the just-set value back to empty in the same render pass. Fixed by ignoring empty-string `onValueChange` calls on the Category and Base Unit selects - no real `SelectItem` in either list ever legitimately has `""` as its value, so the guard only ever rejects the spurious reset.
+
+Item 1 is a genuine backend-response-shape gap in the frontend's central HTTP client, not specific to F3 - it would have affected every current and future screen's first mutating call the moment a user actually tried to use it for real. Items 2 and 3 are specific to the quick-add pattern this phase introduced.
+
+### 27.3 Verified — executed, output observed
+
+| Check | Command | Result |
+| :--- | :--- | :---: |
+| Backend full suite (unaffected by this phase, re-confirmed) | `dotnet test` | ✅ 212/212 |
+| Frontend unit tests | `npx vitest run` | ✅ 33/33 |
+| Type checking | `npx tsc --noEmit` | ✅ clean |
+| Linting | `npm run lint` | ✅ clean |
+| Production build | `npm run build` | ✅ succeeds, 10 static routes including the 4 new F3 routes |
+| Permanent E2E suite (regression check after the `api-client.ts` fix) | `npx playwright test e2e/shell.spec.ts` | ✅ 3/3 |
+| Manual full-flow browser verification against a live Development backend with a real seeded Owner user: login → create Category → create Supplier → create Warehouse → create Restaurant (assigning the warehouse) → create Item (quick-adding both its Category and Unit inline) → reopen the Item and confirm the conversions sub-section renders | One-off Playwright script, deleted after use (not part of the permanent suite - see §27.4) | ✅ full flow passes |
+
+### 27.4 Not verified — genuinely out of Phase F3 scope
+
+| Item | Why deferred |
+| :--- | :--- |
+| A permanent, committed E2E spec covering the F3 create flows | The manual verification script that found and confirmed the fixes for §27.2's three bugs was deliberately temporary (used a throwaway seeded Owner user and was deleted before commit) rather than added to the permanent suite, since a reusable version needs proper E2E test fixtures (a seeded Owner with a known password, reset between runs) that don't exist yet - the same gap §26.5 already flagged for the login happy path. Natural to close together in Phase T2's end-to-end pass. |
+| Deactivate/reactivate and pagination behavior under real multi-page data volumes | Verified by direct code review and the shared `useKeysetList` hook's logic, not by manually creating enough rows to force a second page in this session. |
+| Visual/RTL screenshot review of the four new screens | Same gap already recorded in §25.3 for F1 - no screenshot tooling wired into this session; functional/behavioral verification only. |
+
+Full solution suite (backend): 212/212 passing. Frontend: 33/33 unit tests, all permanent E2E specs green, clean typecheck/lint/build, full manual create-flow verification against a live backend.
