@@ -53,6 +53,15 @@ public sealed class Restaurant : Entity, ITenantScopedEntity
         UpdatedAt = DateTimeOffset.UtcNow;
     }
 
+    public void Update(string nameArabic, string? address, string? description)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(nameArabic);
+        NameArabic = nameArabic;
+        Address = address;
+        Description = description;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
     public void Deactivate()
     {
         Status = RestaurantStatus.Inactive;
