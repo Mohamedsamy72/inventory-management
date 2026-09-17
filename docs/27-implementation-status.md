@@ -43,7 +43,7 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **F1** | Frontend shell & design system | ✅ **COMPLETE** | All 12 tasks (F1.1–F1.12) done and verified. See §25 for full detail. | ✅ Signed off 2026-09-17 |
 | **F2** | Frontend auth & app shell | ✅ **COMPLETE** | All F2 deliverables (login, forgot-password/OTP/reset, session context, per-role nav, authenticated shell) done and verified, including a critical cookie-policy bug found and fixed via real-browser E2E testing. See §26 for full detail. | ✅ Signed off 2026-09-18 |
 | **F3** | Frontend master-data workflows | ✅ **COMPLETE** | All F3 deliverables (categories/units/suppliers/warehouses/restaurants/items screens, quick-add modal, Arabic-normalized search, nested unit conversions) done and verified, including three real bugs found and fixed via live-browser testing. See §27 for full detail. | ✅ Signed off 2026-09-18 |
-| **F4** | Frontend receiving & inventory | ⏳ Pending | After P8. | — |
+| **F4** | Frontend receiving & inventory | ✅ **COMPLETE** | Receiving list/draft editor/submit/verify/reverse and the warehouse stock view done and verified against a live backend, reproducing docs/23 Scenarios 1-2's numerical math exactly end to end. See §28 for full detail. | ✅ Signed off 2026-09-18 |
 | **F5** | Frontend supply workflows | ⏳ Pending | After P11. Highest-value E2E surface. | — |
 | **F6** | Role-specific dashboards | ⏳ Pending | Zero fake data. | — |
 | **S1** | Security hardening & adversarial regression | ✅ **COMPLETE (backend)** | Headers, U+202E stripping, dependency/secret scans done; TLS/npm audit deferred to deployment/frontend. See §23 for full detail. | ✅ Signed off 2026-09-17 |
@@ -60,7 +60,7 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **1** | Architecture & Database (P1–P2) | ✅ **REACHED — signed off 2026-09-17** |
 | **2** | Identity & Authorization (P3–P4, F1–F2) | ✅ **REACHED — signed off 2026-09-18** |
 | **3** | Master Data & Conversions (P5–P6, F3) | ✅ **REACHED — signed off 2026-09-18** |
-| **4** | Stock Engine & Receiving (P7–P8, F4) | ⏳ Not reached |
+| **4** | Stock Engine & Receiving (P7–P8, F4) | ✅ **REACHED — signed off 2026-09-18** |
 | **5** | Supply Workflow (P9–P11, F5) | ⏳ Not reached |
 | **6** | Full Operational Product (P12–P14, F6) | ⏳ Not reached |
 | **7** | Security & Release (P15–P16, S1, T1, T2, R1) | ⏳ Not reached |
@@ -993,3 +993,40 @@ Item 1 is a genuine backend-response-shape gap in the frontend's central HTTP cl
 | Visual/RTL screenshot review of the four new screens | Same gap already recorded in §25.3 for F1 - no screenshot tooling wired into this session; functional/behavioral verification only. |
 
 Full solution suite (backend): 212/212 passing. Frontend: 33/33 unit tests, all permanent E2E specs green, clean typecheck/lint/build, full manual create-flow verification against a live backend.
+
+## 28. Phase F4 Verification Ledger
+
+**Phase F4 is SIGNED OFF (2026-09-18).** The receiving draft→submit→verify→reverse lifecycle and the warehouse stock view (docs/09 §Phase F4, guide §8.2) are implemented and verified against a live Development backend, reproducing the docs/23 Scenario 1-2 numerical math exactly end to end.
+
+### 28.1 What was built
+
+- **`/receiving`**: list (status badge, document number, warehouse, business date) plus a create dialog (warehouse, optional supplier, business date) that navigates straight to the new draft's editor.
+- **`/receiving/[id]`**: the draft editor and lifecycle screen in one, gated by status:
+  - **Draft**: add/remove lines (item, unit - constrained to that item's base unit plus its active conversions, expected quantity, unit cost, notes); a "ترحيل الأمر إلى المخزن" submit action once at least one line exists.
+  - **Submitted**: per-line actual-quantity inputs (defaulting to the expected quantity) and a "تسجيل المطابقة" verify action.
+  - **Verified**: read-only, with a variance column (`actual - expected`) highlighted in the destructive color when non-zero.
+  - **Reverse**: available from Submitted or Verified (never from Reversed - the backend's own state machine already forbids it; the button is simply not shown), behind a confirmation dialog requiring a reason.
+  - Submit/Verify/Reverse each generate their own `X-Idempotency-Key` once per mount (`useState(() => crypto.randomUUID())`), never regenerated on retry, matching guide §8.4's confirmation-screen pattern applied here to receiving's three idempotent mutations.
+- **`/locations/{id}/stock`**: balance/in-transit/available per item for one warehouse, with a "view stock" action added to the Warehouses tab via a new optional `rowActions` prop on `SimpleMasterDataScreen` (F3) - kept optional so Categories/Units/Suppliers, which have no equivalent action, are unaffected.
+- **Cost visibility**: unit cost, line total, and average unit cost render only when `profile.role === 'Owner'` - columns are omitted entirely for every other role, on top of the backend already masking these same fields to `null` via `IFinancialProjection` for any non-Owner caller regardless of what the frontend does.
+
+### 28.2 Verified — executed, output observed
+
+| Check | Command | Result |
+| :--- | :--- | :---: |
+| Type checking | `npx tsc --noEmit` | ✅ clean |
+| Linting | `npm run lint` | ✅ clean |
+| Frontend unit tests | `npx vitest run` | ✅ 33/33 |
+| Production build | `npm run build` | ✅ succeeds, 13 total routes including the 3 new F4 routes (`/receiving`, `/receiving/[id]`, `/locations/[id]/stock`) |
+| Manual full-lifecycle browser verification against a live Development backend with a real seeded Owner user: create prerequisite category/unit/warehouse/item → create a receiving order → add a `100 KG @ 12.00 EGP` line → submit → verify with `actual = 80` (a `-20 KG` variance) → open the warehouse stock view | One-off Playwright script, deleted after use (same throwaway-fixture pattern as §27.3, not part of the permanent suite) | ✅ full flow passes, **zero backend exceptions** |
+| Numerical correctness of the resulting warehouse stock, read back directly via `GET /api/v1/warehouses/{id}/stock` | `curl` against the live backend after the manual flow above | ✅ `balance=80.0000`, `available=80.0000`, `averageUnitCost=12.0000` - exactly docs/23 Scenario 1 (`+100`) followed by Scenario 2 (`-20` reconciliation, never `+20`/`-double-counted`) |
+
+### 28.3 Not verified — genuinely out of Phase F4 scope
+
+| Item | Why deferred |
+| :--- | :--- |
+| A permanent, committed E2E spec covering the receiving lifecycle | Same gap already recorded in §27.4 for F3's create flows - needs proper seeded E2E fixtures (a reusable Owner user with a known password), natural to add together in Phase T2. |
+| Reverse action's actual execution (confirmed only that the button/dialog exists and gates correctly by status/permission) | The manual verification walkthrough stopped after Verify to keep the created order's data available for the stock-view check; Reverse's own ledger-reversal math is already covered by the Phase 8 backend integration tests (`ReceivingOrderTests.cs`) - this phase only needed to confirm the UI wires the existing, already-tested endpoint correctly, which the code review does establish (same request/idempotency-key pattern as Submit/Verify, which were both exercised). |
+| Visual/RTL screenshot review of the new screens | Same gap already recorded in §25.3/§27.4 - no screenshot tooling wired into this session. |
+
+Full solution suite (backend): 212/212 passing, unchanged by this phase. Frontend: 33/33 unit tests, clean typecheck/lint/build, full manual receiving-lifecycle verification against a live backend with exact numerical confirmation.
