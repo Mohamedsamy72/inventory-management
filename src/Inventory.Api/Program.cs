@@ -53,7 +53,12 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 // ordinal is an implementation detail and would silently break the moment a value is
 // inserted/reordered in the enum's declaration.
 builder.Services.ConfigureHttpJsonOptions(options =>
-    options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
+{
+    options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+
+    // AC-31-9 (docs/31 §7): U+202E stripped from every incoming string field, globally.
+    options.SerializerOptions.Converters.Add(new Inventory.Api.Serialization.RightToLeftOverrideStrippingConverter());
+});
 
 // OpenAPI document only, and only in Development (docs/32 CR-098).
 // The interactive UI arrives in Phase 3 with the first real endpoints; a UI over
@@ -66,6 +71,18 @@ if (builder.Environment.IsDevelopment())
 var app = builder.Build();
 
 // ---- Pipeline -------------------------------------------------------------
+// Security headers first (task S1) - applied to every response, including ones the exception
+// handler produces, since an error page is exactly the kind of response these protect.
+app.UseMiddleware<SecurityHeadersMiddleware>();
+
+if (!app.Environment.IsDevelopment())
+{
+    // HSTS only makes sense over HTTPS - a no-op locally (docs/19 §1: http://localhost in dev),
+    // and the reverse proxy in front of production (docs/20 §1) terminates TLS anyway, but
+    // setting it here too is defense in depth, not a substitute for that layer.
+    app.UseHsts();
+}
+
 app.UseExceptionHandler();
 
 // Correlation must wrap everything downstream so that every log line and every

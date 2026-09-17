@@ -46,7 +46,7 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **F4** | Frontend receiving & inventory | ⏳ Pending | After P8. | — |
 | **F5** | Frontend supply workflows | ⏳ Pending | After P11. Highest-value E2E surface. | — |
 | **F6** | Role-specific dashboards | ⏳ Pending | Zero fake data. | — |
-| **S1** | Security hardening & adversarial regression | ⏳ Pending | Full endpoint sweep. | — |
+| **S1** | Security hardening & adversarial regression | ✅ **COMPLETE (backend)** | Headers, U+202E stripping, dependency/secret scans done; TLS/npm audit deferred to deployment/frontend. See §23 for full detail. | ✅ Signed off 2026-09-17 |
 | **T1** | Full automated test sweep | ⏳ Pending | Zero skipped tests. | — |
 | **T2** | Browser E2E & acceptance | ⏳ Pending | Arabic export verified visually. | — |
 | **R1** | Documentation & release readiness | ⏳ Pending | Verified, not asserted. | — |
@@ -797,3 +797,37 @@ The repository's NuGet vulnerability audit (`NU1900`-`NU1904`) began failing out
 | "Every phase's mutations are present in the trail" (task 14.5's literal wording) as an exhaustive, all-phases assertion | Every phase 5-13 service already calls `IAuditLogger.Record` for its own mutations (confirmed by direct source inspection - 12 services do), and this phase's own test confirms at least two distinct modules' entries are queryable together; a single test asserting literally every action code from every phase in one list would be a large, low-marginal-value enumeration rather than a meaningful new check. |
 | A CSV/binary export format | Phase 14's `ExportAsync` returns the same JSON shape as `ListAsync` - no file-generation pipeline exists (Phase 15/17 both deferred, ADR-029), and docs/09's task 14.4 asks only that export be a distinct, audited act, not a specific file format. |
 | A frontend-driven audit viewer | Frontend phases (F1-F6) have not started this session. |
+
+## 23. Phase S1 Verification Ledger
+
+**Phase S1 is SIGNED OFF for the backend (2026-09-17), with two items explicitly deferred to deployment configuration.** All backend phases P0-P14 are now complete, which is what makes a cross-cutting hardening pass meaningful for the first time this session. Most of "adversarial regression... across every endpoint" was already built incrementally, phase by phase, rather than needing new coverage now - see §23.1's traceability table.
+
+### 23.1 What was built new this phase
+
+- **`SecurityHeadersMiddleware`**: `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, and `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` (a pure JSON API serves no HTML/script/style/image of its own - the strictest policy is also the correct one) on every response, including error responses (registered before `UseExceptionHandler`). `app.UseHsts()` added for non-Development environments. docs/20 §2 places these at the reverse proxy in production - this app has no reverse-proxy layer of its own in this repository, so they are also set here, defense in depth, not a replacement for that layer.
+- **`RightToLeftOverrideStrippingConverter`** (AC-31-9, docs/31 §7): a global `JsonConverter<string>` registered once in `ConfigureHttpJsonOptions` - strips U+202E from every incoming string field across every DTO in the entire API, with no per-endpoint code needed and no future DTO able to opt out by omission. Verified against the persisted row, not the response (a value could theoretically be stripped only for display while stored raw - proven not to be the case here).
+- **Dependency vulnerability audit**: `dotnet list InventorySystem.sln package --vulnerable` - zero vulnerable packages found. Deliberately NOT wired into the automated test suite (it needs a live NuGet feed and took over 15 minutes on this machine, which would make every routine `dotnet test` run prohibitively slow) - run once here as a manual check, to be re-run before any release per Phase R1's own "production deployment rehearsal" step.
+- **Secret scan**: `git log --all -p` across the full history for private-key headers, AWS/Google/Slack/GitHub/OpenAI key shapes, and tracked `.env`/`.pem`/`.pfx`/`.key`/credentials files - zero matches. The only credential-shaped string anywhere in the repository is the local-only `postgres/postgres` development database password in `appsettings.Development.json`, which is not a production secret and is the same convenience default already accepted throughout this session (docs/20 §2's "zero plaintext secrets" targets production credentials via env vars/vaults, a deployment-time concern, not a local-dev-default concern).
+- **`messageEn` suppression in Production** (CR-072): already correctly implemented since Phase 3 (`ProblemResponseWriter` gates it on `IHostEnvironment.IsDevelopment()`) - this phase adds the first test that actually verifies it end-to-end against a `WebApplicationFactory` built with `UseEnvironment("Production")`, since no prior phase had a reason to spin up a non-Development host.
+- **No raw stock-mutation endpoint**: `PATCH /stock-balances` and `POST /stock-ledger` both `404` - true by construction (no such route is ever mapped; every stock mutation goes through `IStockPostingService` from inside a real business transaction), verified directly rather than merely assumed.
+- **`SecurityTests`**: 5 new integration tests (headers present on success and error responses, U+202E stripped before storage, `messageEn` suppressed in Production, no raw mutation endpoint exists).
+
+### 23.2 Already covered by earlier phases - not duplicated here
+
+| Adversarial class | Where it is actually tested |
+| :--- | :--- |
+| Tenant traversal (IDOR across companies) | Proven once at the mechanism level in Phase 3 (`AuthorizationTests`, the EF global query filter fix) - every entity implementing `ITenantScopedEntity` inherits the same filter uniformly; it cannot be selectively bypassed per entity type, so a fresh per-resource test for each of Phases 8-14's new entities would re-prove the identical mechanism rather than find a new class of bug. |
+| Mass assignment (`companyId`/`userId`/generated-code/`baseQuantity` on any request DTO) | `MassAssignmentRules` (`Inventory.ArchitectureTests`) reflects over every `*Request`/`*Command` type in the `Inventory.Api` assembly - it automatically covers every DTO added in Phases 8-14 with no changes needed, and is part of the 19 architecture tests re-verified on every full-suite run. |
+| Privilege escalation (self role/scope change, granting beyond one's own bounds, non-grantable permissions) | Phase 4's own dedicated tests (`AuthorizationTests`), re-exercised this phase via the new `AuditReaderTests`/`SecurityTests` stray-grant-row scenarios for `audit:view`. |
+| Financial/cost leakage to non-Owner | `IFinancialProjection` consumers verified per-resource: Phase 5 (`SEC-001`, items), Phase 8 (receiving line costs), Phase 11 (supply confirmation), Phase 13 (stock count adjustments) - each phase's own test suite asserts `null` cost fields for Admin/other roles on that resource specifically. |
+| Warehouse/restaurant scope enforcement (IDOR within a tenant) | Every Phase 8-14 endpoint that needed it built its own `IScopeGuard` consumer and test (receiving, supply requests, supplies, discrepancies, stock counts) - six independent consumers by this point, not a single shared mechanism that could hide a gap. |
+
+### 23.3 Deferred to deployment configuration, not application code
+
+| Item | Why |
+| :--- | :--- |
+| TLS 1.3 enforcement | docs/20 §1's own topology diagram terminates TLS at Cloudflare/the reverse proxy in front of both the frontend and the API - this repository contains no reverse-proxy configuration to hold that setting, and Kestrel itself is not the TLS-terminating layer in the documented production topology. |
+| `npm audit` (frontend dependency audit) | No frontend dependencies exist yet - F1-F6 have not started this session. Will run as part of whichever frontend phase first adds a `package.json`. |
+| Adversarial regression across the (not-yet-built) reporting/export endpoints named in docs/09's own S1 task wording | Phase 15 (File Storage) and Phase 17 (Reporting) are both deferred (ADR-029) - there is nothing at those routes to attack yet. |
+
+Full solution suite: 208/208 passing (27 unit, 19 architecture, 162 integration), stable across two consecutive runs.
