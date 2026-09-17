@@ -20,6 +20,8 @@ public enum MasterDataError
     SequenceExhausted,
     ServingWarehouseUnavailable,
     BaseUnitImmutable,
+    ConversionNotDefined,
+    InvalidConversionFactor,
 }
 
 public sealed record MasterDataResult<T>(bool Succeeded, T? Value, MasterDataError Error, string? ErrorDetail = null);

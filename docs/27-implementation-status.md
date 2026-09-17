@@ -2,7 +2,7 @@
 
 > **Document ID:** SPEC-27
 > **Status:** Live Implementation Register
-> **Current State:** **Phase 1 through Phase 5 CLOSED (2026-09-16/17).** Backend `dotnet build -warnaserror` -> 0 errors, 0 warnings across all 7 projects; `dotnet test` -> 113/113 passing (19 unit, 18 architecture, 76 integration), confirmed stable across repeated consecutive runs. Frontend verified green (typecheck, lint, tests, production build) as of Phase 1. The initial migration (33 entities, composite tenant FKs throughout, `xmin` concurrency, append-only triggers, `audit_logs` partitioning, the full docs/29 §5 index plan, role/permission seed data) applies cleanly to an empty database and is proven by real execution — not just review — against this repo's own PostgreSQL instance. Phase 3 also fixed a critical, phase-independent bug in the tenant query filter introduced in Phase 2 — see §11.2 row 1; it affects every tenant-scoped query in the system, not just auth. Phase 5 also found and fixed a CSRF gap spanning every Phase 4/5 mutating endpoint — see §13.2. **Phase 6 (Unit Conversion System) is next.**
+> **Current State:** **Phase 1 through Phase 6 CLOSED (2026-09-17).** Backend `dotnet build -warnaserror` -> 0 errors, 0 warnings across all 7 projects; `dotnet test` -> 125/125 passing (19 unit, 18 architecture, 88 integration), confirmed stable across repeated consecutive runs. Frontend verified green (typecheck, lint, tests, production build) as of Phase 1. The initial migration (33 entities, composite tenant FKs throughout, `xmin` concurrency, append-only triggers, `audit_logs` partitioning, the full docs/29 §5 index plan, role/permission seed data) applies cleanly to an empty database and is proven by real execution — not just review — against this repo's own PostgreSQL instance. Phase 3 also fixed a critical, phase-independent bug in the tenant query filter introduced in Phase 2 — see §11.2 row 1; it affects every tenant-scoped query in the system, not just auth. Phase 5 also found and fixed a CSRF gap spanning every Phase 4/5 mutating endpoint — see §13.2. Phase 6 found and fixed a second Phase 2 schema bug (a non-partial unique index that would have made ADR-023 corrections impossible) — see §14.2. **Phase 7 (Stock Engine Foundation) is next.**
 >
 > **Environment note for the next session:** this repo's PostgreSQL 16 instance (`C:\pg-inventory-system\`, port 5433) is portable binaries, not a registered Windows service — it does not survive a machine/session restart on its own. If `dotnet test`'s integration suite fails with "Failed to connect to 127.0.0.1:5433 ... actively refused", start it first: `C:\pg-inventory-system\pgsql\bin\pg_ctl.exe start -D C:\pg-inventory-system\data -l C:\pg-inventory-system\logfile.log -o "-p 5433" -w` (docs/19 §1, docs/33 §4.3).
 > **Plan Authority:** `docs/09-implementation-plan.md` (supersedes `docs/22-implementation-plan.md`).
@@ -29,8 +29,8 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **P3** | Authentication, sessions, CSRF, rate limiting | ✅ **COMPLETE** | All 14 tasks (3.1–3.14) done and verified. See §11 for full detail. | ✅ Signed off 2026-09-17 |
 | **P4** | Authorization, scopes, role denial, **audit infrastructure** | ✅ **COMPLETE** | All 15 tasks (4.1–4.15) done and verified. See §12 for full detail. | ✅ Signed off 2026-09-17 |
 | **P5** | Master data | ✅ **COMPLETE** | All 16 tasks (5.1–5.16) done and verified. See §13 for full detail. | ✅ Signed off 2026-09-17 |
-| **P6** | Unit conversion system | ⏳ **Next** | Server-only factor resolution. | — |
-| **P7** | Stock engine, transactions, concurrency, idempotency | ⏳ Pending | `xmin` token; lock ordering; projected idempotency payloads. | — |
+| **P6** | Unit conversion system | ✅ **COMPLETE** | All 8 tasks (6.1–6.8) done and verified. See §14 for full detail. | ✅ Signed off 2026-09-17 |
+| **P7** | Stock engine, transactions, concurrency, idempotency | ⏳ **Next** | `xmin` token; lock ordering; projected idempotency payloads. | — |
 | **P8** | Receiving & warehouse stock ledger | ⏳ Pending | Reconciliation must post the delta, never the full actual. | — |
 | **P9** | Multi-item supply requests | ⏳ Pending | Unblocked — OD-008 closed (ADR-028). Warehouse derived server-side; over-post security test mandatory. | — |
 | **P10** | Fulfilment & dispatch | ⏳ Pending | Must write zero ledger rows. | — |
@@ -472,3 +472,46 @@ The repository's NuGet vulnerability audit (`NU1900`-`NU1904`) began failing out
 | `IFinancialProjection` applied to a real cost/valuation field | Items carry no cost field at all (docs/15 §1 point 1: cost originates exclusively from posted `ReceivingOrder` rows, never stored statically on an item). The masking primitive built in Phase 4 remains unused until Phase 7/8 introduce the first entity that actually carries a cost. |
 | Base-unit immutability (ADR-023) actually blocking a change once ledger rows exist | No `stock_ledger` row can exist before Phase 7's posting service. The guard's query is written and will take effect the moment Phase 7 posts a row - proven then, against real data, not simulated now. |
 | `ItemUnitConversion` CRUD | Explicitly Phase 6 ("Unit Conversion System"), not Phase 5 - the entity exists from Phase 2 but this phase does not manage it. |
+
+---
+
+## 14. Phase 6 Verification Ledger
+
+**Phase 6 is SIGNED OFF (2026-09-17).** All 8 tasks (`docs/09` §Phase 6, table 6.1–6.8) implemented and verified against this repository's own PostgreSQL instance and a real in-process HTTP pipeline.
+
+### 14.1 What was built
+
+- **`ItemUnitConversion` CRUD** (task 6.1): `POST/GET /api/v1/items/{itemId}/conversions`, `POST .../conversions/{id}/deactivate`. Factor validated `> 0` before touching the domain constructor (`400 INVALID_CONVERSION_FACTOR`, docs/13's pre-existing code); the column is `numeric(18,6)` from Phase 2.
+- **`ToBaseUnitId` is never client-supplied** (task 6.2, ADR-023): `CreateItemUnitConversionCommand` has no such property at all - the target is always read from the named item's own current `BaseUnitId` server-side, the same "remove the input, don't just validate it" pattern ADR-028 established for the supply-request serving warehouse. The database's own composite FK (`fk_conversion_item_base_unit`, built in Phase 2) backs this structurally regardless.
+- **`IUnitConversionResolver`** (task 6.3): identity quantity when the requested unit IS the item's base unit; otherwise multiplies by the single active conversion's factor; `Succeeded=false` (task 6.6) when neither applies. This is the ONLY conversion arithmetic in the codebase - every later phase that accepts a non-base-unit quantity must resolve through it.
+- **`BaseQuantity` added to the mass-assignment architecture test's forbidden property list** (task 6.4): no Request/Command DTO, in this phase or any future one, may declare it - `MassAssignmentRules` now fails the build the instant one does, the same guarantee task 4.9 gives `companyId`/`userId`/etc.
+- **Corrections, not edits** (task 6.5, ADR-023): `ItemUnitConversionService.CreateAsync` is the only mutation path for a factor - calling it for an (item, from-unit) pair that already has an active row deactivates that row and inserts a new one, in one `SaveChangesAsync`, both audited (`ITEM_CONVERSION_CORRECTED` vs `ITEM_CONVERSION_CREATED`). There is no separate "update factor in place" endpoint anywhere.
+- **12 new integration tests** (`ItemUnitConversionTests`) covering the docs/09 task 6.7 headline example (1 carton = 12 KG → 20 cartons = 240 KG), per-item factor independence, 6-decimal precision, the correction flow, and permission/tenant-isolation gating consistent with every other Phase 5/6 resource.
+
+### 14.2 A second Phase 2 schema bug found and fixed
+
+`ItemUnitConversionConfiguration`'s `uq_item_conversion` index (`UNIQUE (item_id, from_unit_id, to_base_unit_id)`, built in Phase 2) was a **plain**, not partial, unique index. Since `to_base_unit_id` is always the item's one current base unit, this means a DEACTIVATED row already permanently occupies that exact triple - task 6.5's "correction creates a new row and deactivates the old" is structurally impossible against a plain unique index: the very first correction for any (item, unit) pair would make every subsequent one fail on this constraint, forever. Caught during design, before any code was written against it (not discovered via a failing test) - fixed with a new migration (`20260917083753_AddPartialUniqueIndexOnActiveItemUnitConversion`) making the index partial (`WHERE is_active`), applied to the running database and verified via `dotnet ef migrations has-pending-model-changes` reporting none. The task 6.5 correction-flow test (`Creating_A_Second_Conversion_For_The_Same_Pair_...`) exercises exactly the scenario that would have failed under the old index.
+
+### 14.3 Verified — executed, output observed
+
+| Check | Command / Method | Result |
+| :--- | :--- | :---: |
+| 1 carton = 12 KG → 20 cartons = 240 KG (docs/09 task 6.7 headline example) | `Resolver_Converts_Twenty_Cartons_At_Twelve_Kg_Each_To_Two_Hundred_Forty_Kg` | ✅ |
+| Identity case: requesting the item's own base unit returns the quantity unchanged | `Resolver_Returns_Identity_Quantity_For_The_Items_Own_Base_Unit` | ✅ |
+| No conversion defined → resolver reports failure (task 6.6) | `Resolver_Fails_When_No_Conversion_Is_Defined_For_The_Unit` | ✅ |
+| Zero and negative factors rejected with `400 INVALID_CONVERSION_FACTOR` | `Creating_A_Conversion_With_A_Non_Positive_Factor_Returns_400` (theory, both cases) | ✅ |
+| Different items hold independent factors for same-named units | `Different_Items_Can_Have_Different_Factors_For_The_Same_Unit_Name` | ✅ |
+| A `numeric(18,6)` factor (`0.123456`) applies with no precision drift | `A_Six_Decimal_Factor_Applies_Without_Precision_Drift` | ✅ `1000 × 0.123456 = 123.456` exactly |
+| A second conversion for the same pair deactivates the first (not deletes it) and the resolver immediately uses the new factor | `Creating_A_Second_Conversion_For_The_Same_Pair_Deactivates_The_First_And_The_Resolver_Uses_The_New_Factor` | ✅ |
+| Listing an item's conversions returns both the deactivated and active rows | `Listing_Conversions_For_An_Item_Returns_Both_The_Deactivated_And_Active_Rows` | ✅ |
+| Creating targets the item's real base unit even though the client never supplies it | `Creating_A_Conversion_Succeeds_And_Targets_The_Items_Own_Base_Unit` | ✅ |
+| Missing `conversions:manage` → `403` | `A_User_Without_Conversions_Manage_Is_Forbidden` | ✅ |
+| The partial-index migration applies cleanly and the model has no pending changes afterward | `dotnet ef database update` + `dotnet ef migrations has-pending-model-changes` | ✅ "No changes have been made to the model since the last migration." |
+| Full solution suite, multiple consecutive runs | `dotnet test InventorySystem.sln` | ✅ 125/125 (19 unit, 18 architecture, 88 integration), every run |
+
+### 14.4 Not verified — genuinely out of Phase 6 scope
+
+| Item | Why deferred |
+| :--- | :--- |
+| Task 6.8's integration test (a request submitting `conversionFactor` on a TRANSACTIONAL line has it discarded and the server's resolved factor applied) | No transactional line-item endpoint (receiving order line, supply request line, ...) exists yet to submit one against - `IUnitConversionResolver` itself is fully proven (§14.3); its first real transactional caller (Phase 8's receiving, most likely) will prove this end-to-end, the same posture Phase 4/5 already took for several "first real consumer" items. |
+| `CONVERSION_NOT_DEFINED` as an actual `409` HTTP response | Same reason - the resolver's `Succeeded=false` outcome (§14.3) has no consuming endpoint yet to translate it into a response; nothing calls the resolver from an HTTP handler in this phase. |

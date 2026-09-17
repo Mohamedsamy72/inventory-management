@@ -40,6 +40,10 @@ internal static class ErrorCodes
     /// `stock_ledger` row exists for it. No prior code covers this.</summary>
     public const string BaseUnitImmutable = "BASE_UNIT_IMMUTABLE";
 
+    /// <summary>Phase 6, task 6.6 - already in docs/13's original catalogue.</summary>
+    public const string ConversionNotDefined = "CONVERSION_NOT_DEFINED";
+    public const string InvalidConversionFactor = "INVALID_CONVERSION_FACTOR";
+
     public static string ArabicMessageFor(string code) => code switch
     {
         InvalidCredentials => "رقم الجوال أو كلمة المرور غير صحيحة.",
@@ -57,6 +61,8 @@ internal static class ErrorCodes
         DuplicateItemName => "يوجد صنف مسجل مسبقاً بنفس الاسم العربي في المنشأة.",
         DuplicateName => "يوجد سجل مسجل مسبقاً بنفس الاسم أو الرمز في المنشأة.",
         BaseUnitImmutable => "لا يمكن تغيير وحدة القياس الأساسية بعد وجود حركات مخزنية لهذا الصنف.",
+        ConversionNotDefined => "لا يوجد معامل تحويل مفعّل لهذه الوحدة لهذا الصنف.",
+        InvalidConversionFactor => "معامل التحويل يجب أن يكون قيمة موجبة أكبر من الصفر.",
         _ => throw new ArgumentOutOfRangeException(nameof(code), code, "Unknown error code."),
     };
 
@@ -77,6 +83,8 @@ internal static class ErrorCodes
         DuplicateItemName => "An item with this Arabic name already exists.",
         DuplicateName => "A record with this name or code already exists.",
         BaseUnitImmutable => "The base unit cannot change once stock ledger entries exist for this item.",
+        ConversionNotDefined => "No active conversion for this unit.",
+        InvalidConversionFactor => "Conversion factor must be positive.",
         _ => throw new ArgumentOutOfRangeException(nameof(code), code, "Unknown error code."),
     };
 }

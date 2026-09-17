@@ -22,7 +22,17 @@ public sealed class ItemUnitConversionConfiguration : IEntityTypeConfiguration<I
         builder.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
         builder.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
 
-        builder.HasIndex(e => new { e.ItemId, e.FromUnitId, e.ToBaseUnitId }).IsUnique().HasDatabaseName("uq_item_conversion");
+        // Partial (WHERE is_active), not a plain unique index: ADR-023/task 6.5 requires a
+        // correction to insert a NEW row and deactivate the old one, never edit in place. A
+        // plain UNIQUE(item_id, from_unit_id, to_base_unit_id) would make that structurally
+        // impossible the moment one correction ever happened - the deactivated row would still
+        // hold the triple forever, and every later "correction" for the same item/unit pair
+        // would fail on the very constraint meant to keep the data clean. Only ACTIVE rows
+        // must be unique; any number of deactivated rows may share a triple.
+        builder.HasIndex(e => new { e.ItemId, e.FromUnitId, e.ToBaseUnitId })
+            .IsUnique()
+            .HasFilter("is_active")
+            .HasDatabaseName("uq_item_conversion");
         builder.HasIndex(e => new { e.CompanyId, e.ItemId, e.IsActive }).HasDatabaseName("ix_conv_item");
 
         builder.HasOne<Unit>().WithMany()

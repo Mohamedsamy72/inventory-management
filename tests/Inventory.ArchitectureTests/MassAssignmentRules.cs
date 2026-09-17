@@ -16,6 +16,10 @@ public sealed class MassAssignmentRules
     private static readonly string[] ForbiddenPropertyNames =
     [
         "CompanyId", "UserId", "GeneratedCode", "DocumentNumber", "CreatedAt",
+        // Task 6.4 (docs/25 "Client-Side Calculation Trust"): a base quantity is always derived
+        // server-side via IUnitConversionResolver from an entered quantity + unit id - no
+        // command DTO may accept a pre-computed one, in any phase, ever.
+        "BaseQuantity",
     ];
 
     [Fact]
