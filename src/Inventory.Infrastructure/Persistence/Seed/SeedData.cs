@@ -85,6 +85,14 @@ internal static class SeedData
         // addition.
         new(PermissionId(33), "discrepancies:view", "عرض الفروقات", "discrepancies"),
         new(PermissionId(34), "discrepancies:resolve", "حل الفروقات", "discrepancies"),
+
+        // REQ-07 (docs/26, docs/04 §12) - restaurant consumption logging. Also not in docs/03
+        // §3's original catalogue table (no "Consumption" module row); this feature's DB layer
+        // (ConsumptionRecord/consumption_records) was built in Phase 2 but never scheduled by
+        // name in docs/09, and is closed here as a Phase T1 traceability gap (docs/26 rule 1:
+        // "every requirement has at least one verification test").
+        new(PermissionId(35), "consumption:create", "تسجيل استهلاك", "consumption"),
+        new(PermissionId(36), "consumption:view", "عرض سجلات الاستهلاك", "consumption"),
     ];
 
     private static readonly string[] OwnerCodes =
@@ -100,6 +108,7 @@ internal static class SeedData
         "audit:view", "audit:export",
         "users:view", "users:manage", "users:scope",
         "discrepancies:view", "discrepancies:resolve",
+        "consumption:create", "consumption:view",
     ];
 
     private static readonly string[] AdminCodes =
@@ -116,6 +125,7 @@ internal static class SeedData
         // are omitted here for clarity, not as the enforcement mechanism.
         "users:view", "users:manage", "users:scope",
         "discrepancies:view", "discrepancies:resolve",
+        "consumption:create", "consumption:view",
     ];
 
     private static readonly string[] WarehouseStaffCodes =
@@ -134,6 +144,7 @@ internal static class SeedData
         "supply_requests:create", "supply_requests:view",
         "supplies:view", "supplies:confirm",
         "discrepancies:view",
+        "consumption:create", "consumption:view",
     ];
 
     public sealed record RolePermissionSeed(Guid RoleId, Guid PermissionId);

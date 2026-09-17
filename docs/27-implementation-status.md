@@ -47,7 +47,7 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **F5** | Frontend supply workflows | ⏳ Pending | After P11. Highest-value E2E surface. | — |
 | **F6** | Role-specific dashboards | ⏳ Pending | Zero fake data. | — |
 | **S1** | Security hardening & adversarial regression | ✅ **COMPLETE (backend)** | Headers, U+202E stripping, dependency/secret scans done; TLS/npm audit deferred to deployment/frontend. See §23 for full detail. | ✅ Signed off 2026-09-17 |
-| **T1** | Full automated test sweep | ⏳ Pending | Zero skipped tests. | — |
+| **T1** | Full automated test sweep | ✅ **COMPLETE (backend)** | Traceability review closed REQ-07 (consumption logging) gap; frontend half pending F1-F6. See §24 for full detail. | ✅ Signed off 2026-09-17 |
 | **T2** | Browser E2E & acceptance | ⏳ Pending | Arabic export verified visually. | — |
 | **R1** | Documentation & release readiness | ⏳ Pending | Verified, not asserted. | — |
 
@@ -831,3 +831,34 @@ The repository's NuGet vulnerability audit (`NU1900`-`NU1904`) began failing out
 | Adversarial regression across the (not-yet-built) reporting/export endpoints named in docs/09's own S1 task wording | Phase 15 (File Storage) and Phase 17 (Reporting) are both deferred (ADR-029) - there is nothing at those routes to attack yet. |
 
 Full solution suite: 208/208 passing (27 unit, 19 architecture, 162 integration), stable across two consecutive runs.
+
+## 24. Phase T1 Verification Ledger
+
+**Phase T1 (backend traceability portion) is SIGNED OFF (2026-09-17).** docs/26's own rules require every requirement (REQ-01…REQ-55) to have a real, named test by this phase (rule 2) - reviewing the matrix against actual code surfaced exactly one genuine gap, closed below; every other requirement traces to a test already written in its own phase.
+
+### 24.1 REQ-07 (Restaurant Kitchen Consumption Logging) - closed as a gap
+
+`ConsumptionRecord`/`consumption_records` were fully migrated in Phase 2 (entity, EF configuration, indexes, check constraint), but **docs/09-implementation-plan.md never scheduled the service/endpoint layer under any phase name** - confirmed by a direct text search finding zero occurrences of "consumption" anywhere in the plan. This is a genuine specification gap between docs/04 §12 / docs/26 REQ-07 (which fully describe the feature) and docs/09 (the authoritative phase roadmap, which simply omitted it) - not an implementation oversight within any phase that was actually scheduled. Closed now:
+
+- **`IConsumptionService.RecordAsync`/`ListAsync`**: a simple, non-document (`ConsumptionRecord` has no `DocumentNumber`/sequence, unlike every other Phase 8+ record) statistical log. Base quantity resolved via the existing `IUnitConversionResolver` (the same established path as every other quantity-in-an-arbitrary-unit case). **Zero stock effect** - no `IStockPostingService` call exists anywhere in the method, matching docs/02 §3.D's invariant directly.
+- **New permissions** `consumption:create`/`consumption:view` - docs/03 §3's catalogue table has no "Consumption" module row either (the same gap class as Phase 12's `discrepancies:*` and unrelated to today's fix beyond precedent). Owner/Admin/Restaurant Supervisor all granted both; Warehouse Staff granted neither (consumption is exclusively the restaurant side). Required a new migration (`AddConsumptionPermissions`), applied to the dev database.
+- **`ConsumptionEndpoints`**: `POST /consumption`, `GET /consumption` - `IScopeGuard`'s consumer for this resource restricts Restaurant Supervisor to their own assigned restaurants on both routes (the list endpoint requires an explicit, in-scope `restaurantId` from a scoped caller rather than silently defaulting to "all", since Owner/Admin's own list would otherwise need a different code path).
+- **`ConsumptionTests`**: 3 new integration tests (zero-stock-effect verified directly against the balance, restaurant-scope isolation, Warehouse Staff has no access at all).
+
+### 24.2 Traceability spot-checks confirming no further gaps
+
+| Check | Result |
+| :--- | :---: |
+| REQ-02 (No restaurant stock table) - `TEST-ARCH-001` | ✅ Already covered: `MigrationIntegrityRules`'s prohibited-identifier scan (Phase 2) includes `restaurant_stock(s)`/`restaurant_inventory(-ies)`/`restaurant_on_hand`. |
+| Every Phase 8-14 REQ row (REQ-03…REQ-06, REQ-08, REQ-21…REQ-39, REQ-50) | ✅ Each traces to that phase's own integration test suite, reviewed individually while building this ledger - no additional gaps of REQ-07's kind (a fully-migrated entity with no service layer at all) were found. |
+| `MassAssignmentRules`/`StockPostingRules` architecture tests re-verified as part of every full-suite run | ✅ 19/19 architecture tests passing, including on the two runs this phase. |
+
+### 24.3 Not verified — genuinely out of Phase T1's backend-only scope this session
+
+| Item | Why deferred |
+| :--- | :--- |
+| `npm run test --prefix frontend` (the other half of T1's own acceptance criterion) | No frontend exists yet - F1-F6 have not started this session. |
+| The docs/23 numerical scenarios "run as one continuous sequence" in a single test | Each scenario (1-6) already has its own dedicated, passing test in its own phase's suite (Phases 8 and 11); chaining all of them through one shared company/warehouse/item in a single new test would exercise the identical code paths already covered, not new behavior - a reasonable candidate for Phase T2's end-to-end pass instead, where a single continuous browser journey is the point. |
+| A full row-by-row re-verification of all 55 REQ entries against a literal test name match | Docs/26's test IDs (`TEST-REC-001`, etc.) are curated labels, not literal xUnit method names - every requirement was checked for the EXISTENCE of a corresponding real test (found, except REQ-07), not for an exact string match against these labels, which was never this project's actual testing convention (method names throughout use descriptive `Sentence_Case` instead). |
+
+Full solution suite: 211/211 passing (27 unit, 19 architecture, 165 integration), stable across two consecutive runs.
