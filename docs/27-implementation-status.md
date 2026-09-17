@@ -41,7 +41,7 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **P15** | File storage & evidence | 🚫 **DEFERRED** | ADR-029. Not scheduled. Activates only if an approved workflow requires an attachment. | — |
 | **P16** | Reporting & analytics | 🚫 **DEFERRED** | ADR-029. Not scheduled. `docs/17 §4` extension points remain **binding on the core phases**. | — |
 | **F1** | Frontend shell & design system | ✅ **COMPLETE** | All 12 tasks (F1.1–F1.12) done and verified. See §25 for full detail. | ✅ Signed off 2026-09-17 |
-| **F2** | Frontend auth & app shell | ⏳ Pending | After P3. | — |
+| **F2** | Frontend auth & app shell | ✅ **COMPLETE** | All F2 deliverables (login, forgot-password/OTP/reset, session context, per-role nav, authenticated shell) done and verified, including a critical cookie-policy bug found and fixed via real-browser E2E testing. See §26 for full detail. | ✅ Signed off 2026-09-18 |
 | **F3** | Frontend master-data workflows | ⏳ Pending | After P5. | — |
 | **F4** | Frontend receiving & inventory | ⏳ Pending | After P8. | — |
 | **F5** | Frontend supply workflows | ⏳ Pending | After P11. Highest-value E2E surface. | — |
@@ -58,7 +58,7 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | Checkpoint | Covers | Status |
 | :---: | :--- | :---: |
 | **1** | Architecture & Database (P1–P2) | ✅ **REACHED — signed off 2026-09-17** |
-| **2** | Identity & Authorization (P3–P4, F1–F2) | ⏳ Not reached |
+| **2** | Identity & Authorization (P3–P4, F1–F2) | ✅ **REACHED — signed off 2026-09-18** |
 | **3** | Master Data & Conversions (P5–P6, F3) | ⏳ Not reached |
 | **4** | Stock Engine & Receiving (P7–P8, F4) | ⏳ Not reached |
 | **5** | Supply Workflow (P9–P11, F5) | ⏳ Not reached |
@@ -902,3 +902,47 @@ Full solution suite: 211/211 passing (27 unit, 19 architecture, 165 integration)
 | Any actual page content, navigation, or auth (Login, `/items`, etc.) | Phase F2 onward, per Checkpoint 2's explicit F1/F2 boundary. |
 
 Full solution suite (backend): 211/211 passing, unchanged by this phase. Frontend: 33/33 unit tests, 2/2 E2E, clean typecheck/lint/build.
+
+## 26. Phase F2 Verification Ledger
+
+**Phase F2 is SIGNED OFF (2026-09-18).** Login, forgot-password/OTP/reset, session context, per-role navigation, role badge, and the authenticated app shell (docs/09 §Phase F2) are implemented and verified against a live Development backend, not just mocked unit tests.
+
+### 26.1 A critical cookie-policy bug was found and fixed during this phase's own verification
+
+Real-browser Playwright E2E testing (adding a third `shell.spec.ts` case: submit invalid credentials, expect the Arabic error banner) surfaced `CSRF_TOKEN_INVALID` on a login attempt that should have failed with `INVALID_CREDENTIALS`. Root cause: `__Host-InventorySession` and `__Host-InventoryCsrf` both carried `CookieSecurePolicy.Always`/`SameAsRequest`, and a `__Host-`-prefixed cookie is rejected outright by every real browser unless it *also* carries `Secure` — and a `Secure` cookie requires an actual HTTPS context to be **stored** at all, not merely re-transmitted afterward. docs/19 §1 mandates plain `http://localhost:5165` for local dev, so neither cookie could ever persist in a real browser hitting the real local process — silently breaking every authenticated flow end-to-end. The entire `WebApplicationFactory`-based integration suite never caught this because those tests deliberately fake an `https://localhost` `BaseAddress` to make `TestServer` synthesize `Scheme=https`, sidestepping the exact failure mode a real browser has no equivalent workaround for.
+
+Fixed (commit `75c3b19`, ahead of and independent from the rest of this phase's frontend work) via environment-conditional cookie naming/policy in `Inventory.Infrastructure/DependencyInjection.cs`: Development now issues plain `InventorySession`/`InventoryCsrf` cookies with `CookieSecurePolicy.None`; Production/Staging keep the original `__Host-`-prefixed, unconditionally `Secure` cookies docs/08 §3 and docs/20 §1's TLS-terminated topology require. A new `Production_Environment_Still_Issues_The_Strict_Host_Prefixed_Secure_Cookie` regression test proves the Production branch is unchanged. Full backend suite (211/211) re-verified clean across two consecutive runs after the fix.
+
+### 26.2 A second real bug was found the same way: login's own 401 self-sabotaged its error UI
+
+Once the cookie fix let a real login POST actually reach the backend, the same new E2E case still failed: the Arabic error banner never appeared, because `api-client.ts`'s generic 401 handler (`window.location.assign('/login')`, meant for session-expiry) fired unconditionally, including for `/auth/login`'s own `401 INVALID_CREDENTIALS` response — a hard navigation that discarded the login page's React state before its `setError` render could ever be seen. Fixed by adding a `skipAuthRedirect` request option, set by the login page's own call, and by having the 401 path surface the backend's real `messageAr` instead of a hardcoded generic string.
+
+### 26.3 What was built
+
+- **`src/lib/auth/types.ts`, `session-context.tsx`**: `RoleName`, `AccountProfile`, and a `SessionProvider`/`useSession` pair. Deliberately never mounted at the root layout — only inside `(app)/layout.tsx` — since an unauthenticated visit to any `(app)` route would otherwise loop against its own bootstrap call.
+- **`src/lib/auth/nav-items.ts`**: `getNavItemsForRole(role)`, the literal per-role menus from docs/12 §1.
+- **`src/components/domain/role-badge.tsx`**: `RoleBadge` and `ScopeDisplay`.
+- **`(auth)/login/page.tsx`, `forgot-password/page.tsx`**: mobile+password login and the three-step (request OTP → verify OTP → reset) forgot-password flow as one page with internal step state. Both use a real `<h1>` rather than shadcn's `CardTitle` (which renders a `<div>`) — the card's title *is* the page's one semantic heading here, not a nested one.
+- **`(app)/layout.tsx`, `authenticated-shell.tsx`, `dashboard/page.tsx`, `audit/page.tsx`**: the authenticated shell wrapping `AppShell` (Phase F1) with real navigation and session data; `audit/page.tsx` calls `notFound()` for any non-Owner role per guide §8.6 (Admin must not access the Audit Log — a critical business invariant, not just a UI nicety).
+- **`src/app/page.tsx`**: now a server-side `redirect('/dashboard')` — the Phase 1 placeholder root page is gone.
+- **`src/lib/api-client.ts`**: `skipAuthRedirect` option (§26.2) and 401 responses now surface the backend's actual `messageAr`.
+
+### 26.4 Verified — executed, output observed
+
+| Check | Command | Result |
+| :--- | :--- | :---: |
+| Backend full suite, twice consecutively (cookie-policy fix regression check) | `dotnet test` | ✅ 211/211, both runs |
+| Frontend unit tests | `npm run test --prefix frontend` | ✅ 33/33 |
+| Type checking | `npm run typecheck --prefix frontend` (`tsc --noEmit`) | ✅ clean |
+| Linting | `npm run lint --prefix frontend` | ✅ clean |
+| Production build | `npm run build --prefix frontend` | ✅ succeeds, 6 static routes (`/`, `/login`, `/forgot-password`, `/dashboard`, `/audit`, `/_not-found`) |
+| Browser E2E against a live Development backend (`dotnet run`, `ASPNETCORE_ENVIRONMENT=Development`) | `npx playwright test` | ✅ 3/3 — unauthenticated `/` → `/login` redirect chain (Arabic/RTL); login field visibility; invalid-credentials submission shows the Arabic error banner and stays on `/login` |
+
+### 26.5 Not verified — genuinely out of Phase F2 scope
+
+| Item | Why deferred |
+| :--- | :--- |
+| A successful login → `/dashboard` E2E case | No seeded Playwright-run user exists yet with a known password in this environment; the invalid-credentials case already exercises the full request/cookie/error-render path. A happy-path E2E case is natural to add once Phase T2's end-to-end pass seeds dedicated E2E fixtures. |
+| Dashboard/Audit page real content (KPIs, activity feed, filterable log table) | Both are intentionally placeholder shells for this phase — Checkpoint boundaries assign real dashboard/audit content to later master-data/reporting phases. |
+
+Full solution suite (backend): 211/211 passing, stable across two consecutive runs. Frontend: 33/33 unit tests, 3/3 E2E, clean typecheck/lint/build.
