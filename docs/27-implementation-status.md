@@ -33,8 +33,8 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **P7** | Stock engine, transactions, concurrency, idempotency | ✅ **COMPLETE** | All 15 tasks (7.1–7.15) done and verified. No business endpoint exposed (by design). See §15 for full detail. | ✅ Signed off 2026-09-17 |
 | **P8** | Receiving & warehouse stock ledger | ✅ **COMPLETE** | All 13 tasks (8.1–8.13) done and verified. See §16 for full detail. | ✅ Signed off 2026-09-17 |
 | **P9** | Multi-item supply requests | ✅ **COMPLETE** | All 14 tasks (9.1–9.14) done and verified. See §17 for full detail. | ✅ Signed off 2026-09-17 |
-| **P10** | Fulfilment & dispatch | ⏳ **Next** | Must write zero ledger rows. | — |
-| **P11** | Restaurant receipt confirmation | ⏳ Pending | Only stock-deducting path; all-or-nothing per document. | — |
+| **P10** | Fulfilment & dispatch | ✅ **COMPLETE** | All 8 tasks (10.1–10.8) done and verified. See §18 for full detail. | ✅ Signed off 2026-09-17 |
+| **P11** | Restaurant receipt confirmation | ⏳ **Next** | Only stock-deducting path; all-or-nothing per document. | — |
 | **P12** | Discrepancies & reconciliation | ⏳ Pending | Resolution must never post a movement. | — |
 | **P13** | Physical stock counts & adjustments | ⏳ Pending | In-transit exclusion (ADR-018); server-side blind counting. | — |
 | **P14** | Audit viewer & activity monitor | ⏳ Pending | Owner-only, no grant path. | — |
@@ -632,3 +632,36 @@ The repository's NuGet vulnerability audit (`NU1900`-`NU1904`) began failing out
 | Fulfilment-queue warehouse-scope enforcement for Warehouse Staff | That view belongs to Phase 10 (`POST /supply-requests/{id}/fulfill` and the fulfilment queue), which does not exist yet. |
 | `PartiallyFulfilled`/`Fulfilled` status transitions | `SupplyRequest.UpdateFulfillmentStatus` is Phase 10's own responsibility - no fulfilment endpoint exists yet to drive it. |
 | A frontend-driven supply-request workflow | Frontend phases (F1-F6) have not started this session. |
+
+## 18. Phase 10 Verification Ledger
+
+**Phase 10 is SIGNED OFF (2026-09-17).** All 8 tasks (`docs/09` §Phase 10, 10.1–10.8, ADR-017/ADR-019) implemented and verified end-to-end over real HTTP. **Zero stock effect** through fulfilment AND dispatch - `ISupplyService` never calls `IStockPostingService`; only Phase 11's receipt confirmation will.
+
+### 18.1 What was built
+
+- **`ISupplyService`/`SupplyService`** (tasks 10.1-10.5): `Supply`/`SupplyItem` (ADR-017 state machine) already existed complete from Phase 2 - no entity changes needed. `FulfillAsync` (T5) accepts a subset of the request's lines (a line omitted this round is simply left for a later fulfilment call - `SupplyRequestStatus.PartiallyFulfilled` exists precisely for this multi-round case), validates `0 <= fulfilled <= remaining` per line via `SupplyRequestItem.RecordFulfillment`'s own additive guard, links each non-zero line's new `SupplyItem` back to its `SupplyRequestItem` (CR-024), and recomputes the request's aggregate status from ALL lines' running totals (not just the lines touched this round). `DispatchAsync` (T6) is `Prepared -> Dispatched` plus actor/timestamp only. `CancelAsync` is the entity's own `Prepared`-only guard, surfaced as `400 INVALID_STATE_TRANSITION` once dispatched.
+- **Sufficiency advisory** (task 10.6, ADR-019): a new `SupplyOperationResult` wraps the summary with `InsufficientStockItemIds` - computed live (`balance - inTransit` via the existing `IInTransitCalculator`) at the exact moment of fulfilment or dispatch, returned only in that operation's own response, never persisted and never recomputed on a later `GET` (a stale flag that silently changes as the balance moves would be worse than no flag). It warns; nothing in this phase blocks or reserves.
+- **`IScopeGuard`'s third consumer** (task 10.7): Warehouse Staff is checked against `GetAuthorizedWarehouseIdsAsync` on fulfil/dispatch/cancel (all resolve to the `Supply`'s or `SupplyRequest`'s own warehouse); Owner/Admin unrestricted.
+- **`SuppliesEndpoints`**: `POST /supply-requests/{id}/fulfill` (gated by `supply_requests:fulfill`, matching docs/03's permission code despite its Arabic description reading "fulfil and ship" - the separate `supplies:dispatch` permission is what actually gates `POST /supplies/{id}/dispatch`), `GET /supplies`, `GET /supplies/{id}`, `POST /supplies/{id}/cancel` (gated by `supply_requests:fulfill` too - cancelling reverses the same act that permission performs, and only works before any dispatch has happened).
+- **`SupplyFulfillmentTests`** (task 10.8): 6 new integration tests over real HTTP, seeding real opening balances via the Phase 8 receiving flow so the byte-identical-stock assertion has a real, non-zero balance to prove unchanged.
+
+### 18.2 Verified — executed, output observed
+
+| Check | Command / Method | Result |
+| :--- | :--- | :---: |
+| docs/23 Scenario 3: full fulfil-then-dispatch of a 100-unit request against a 580-unit balance leaves the balance at EXACTLY 580 and the stock ledger row count for the test's own company unchanged | `SupplyFulfillmentTests.Full_Fulfilment_And_Dispatch_Leaves_Stock_Exactly_Unchanged` | ✅ |
+| A full single-round fulfilment (100 of 100) sets the request to `Fulfilled` | Same test | ✅ |
+| Partial fulfilment (60 of 100) sets `PartiallyFulfilled`; a second call for the remaining 40 completes it to `Fulfilled` - proving the running-total recompute (not just this round's lines) | `SupplyFulfillmentTests.Partial_Fulfilment_Leaves_Request_PartiallyFulfilled_And_Line_Fulfillable_Again` | ✅ |
+| Fulfilling against zero stock succeeds (never blocks) and flags the item in `InsufficientStockItemIds`; balance stays at 0 (no phantom deduction) | `SupplyFulfillmentTests.Zero_Fulfilled_Line_Is_Permitted_And_Advisory_Raised_Without_Blocking` | ✅ |
+| `Cancelled` is refused once a supply has been dispatched | `SupplyFulfillmentTests.Cancel_Is_Refused_After_Dispatch` | ✅ |
+| Cancelling from `Prepared` succeeds | `SupplyFulfillmentTests.Cancel_From_Prepared_Succeeds` | ✅ |
+| Warehouse Staff with no assigned scope gets `403` on fulfil | `SupplyFulfillmentTests.Warehouse_Staff_Outside_Scope_Cannot_Fulfill_Or_Dispatch` | ✅ |
+| Full solution suite, multiple consecutive runs | `dotnet test` | ✅ 176/176 (27 unit, 19 architecture, 130 integration); one incidental run hit a pre-existing Phase 5 test's (`DocumentSequenceServiceTests`, 1000 concurrent connections) Postgres connection-pool exhaustion under full-suite parallel load - confirmed unrelated to this phase by re-running it in isolation (passes every time alone) |
+
+### 18.3 Not verified — genuinely out of Phase 10 scope
+
+| Item | Why deferred |
+| :--- | :--- |
+| A dedicated `GET /supplies`/`GET /supplies/{id}` restaurant-scope test for Restaurant Supervisor | docs/09 task 10.7 explicitly scopes "both endpoints" (fulfil, dispatch) to warehouse - the view endpoints' own scope (restaurant-side, for supervisors watching their incoming supplies) is not itself required by this task's acceptance criteria; a reasonable first addition if Phase 11's confirmation work touches this view. |
+| Restaurant receipt confirmation reading these `Supply`/`SupplyItem` rows | Phase 11's own job - the only stock-deducting path in the product, not built yet. |
+| A frontend-driven fulfilment/dispatch workflow | Frontend phases (F1-F6) have not started this session. |
