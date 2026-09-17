@@ -34,6 +34,17 @@ public sealed class Supplier : Entity, ITenantScopedEntity
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
+    public void Update(string nameArabic, string? phone, string? contactPerson, string? address, string? notes)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(nameArabic);
+        NameArabic = nameArabic;
+        Phone = phone;
+        ContactPerson = contactPerson;
+        Address = address;
+        Notes = notes;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
     public void Deactivate()
     {
         IsActive = false;

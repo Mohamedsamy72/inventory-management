@@ -94,6 +94,8 @@ public static class DependencyInjection
         services.AddScoped<Application.Users.IUserManagementService, Users.UserManagementService>();
         services.AddScoped<IDocumentSequenceService, Sequencing.DocumentSequenceService>();
         services.AddScoped<Application.MasterData.ICategoryService, MasterData.CategoryService>();
+        services.AddScoped<Application.MasterData.IUnitService, MasterData.UnitService>();
+        services.AddScoped<Application.MasterData.ISupplierService, MasterData.SupplierService>();
         // Scoped, not Singleton: this handler depends on ICurrentUserService and
         // IPermissionEvaluator, both request-scoped. A Singleton registration here would repeat
         // exactly the captive-dependency bug already fixed once in InventoryDbContext's tenant

@@ -28,6 +28,14 @@ public sealed class Unit : Entity, ITenantScopedEntity
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
+    public void Update(string nameArabic, string? abbreviation)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(nameArabic);
+        NameArabic = nameArabic;
+        Abbreviation = abbreviation;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
     public void Deactivate()
     {
         IsActive = false;

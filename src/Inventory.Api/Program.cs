@@ -96,6 +96,8 @@ app.UseAntiforgery();
 app.MapAuthEndpoints();
 app.MapUsersEndpoints();
 app.MapCategoriesEndpoints();
+app.MapUnitsEndpoints();
+app.MapSuppliersEndpoints();
 
 // ---- Health probes (docs/32 CR-064) ---------------------------------------
 // Both are unauthenticated, so both disclose liveness and nothing else: no
