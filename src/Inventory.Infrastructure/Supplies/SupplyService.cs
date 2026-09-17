@@ -1,8 +1,10 @@
+using System.Text.Json;
 using Inventory.Application.Common;
 using Inventory.Application.Supplies;
 using Inventory.Domain.Entities;
 using Inventory.Domain.Enums;
 using Inventory.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -16,19 +18,25 @@ public sealed class SupplyService : ISupplyService
     private readonly IAuditLogger _auditLogger;
     private readonly IDocumentSequenceService _sequenceService;
     private readonly IInTransitCalculator _inTransitCalculator;
+    private readonly IStockPostingService _stockPostingService;
+    private readonly IIdempotencyService _idempotencyService;
 
     public SupplyService(
         InventoryDbContext context,
         ICurrentUserService currentUserService,
         IAuditLogger auditLogger,
         IDocumentSequenceService sequenceService,
-        IInTransitCalculator inTransitCalculator)
+        IInTransitCalculator inTransitCalculator,
+        IStockPostingService stockPostingService,
+        IIdempotencyService idempotencyService)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _currentUserService = currentUserService ?? throw new ArgumentNullException(nameof(currentUserService));
         _auditLogger = auditLogger ?? throw new ArgumentNullException(nameof(auditLogger));
         _sequenceService = sequenceService ?? throw new ArgumentNullException(nameof(sequenceService));
         _inTransitCalculator = inTransitCalculator ?? throw new ArgumentNullException(nameof(inTransitCalculator));
+        _stockPostingService = stockPostingService ?? throw new ArgumentNullException(nameof(stockPostingService));
+        _idempotencyService = idempotencyService ?? throw new ArgumentNullException(nameof(idempotencyService));
     }
 
     public async Task<TransactionalResult<SupplyOperationResult>> FulfillAsync(
@@ -211,6 +219,150 @@ public sealed class SupplyService : ISupplyService
         await _context.SaveChangesAsync(cancellationToken);
 
         return TransactionalResult.Success(await ToSummaryAsync(supply, cancellationToken));
+    }
+
+    public async Task<TransactionalResult<SupplyOperationResult>> ConfirmAsync(
+        Guid id, ConfirmSupplyCommand command, IdempotencyContext idempotency, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(idempotency);
+
+        Supply? supply = await _context.Supplies.FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+        if (supply is null)
+        {
+            return TransactionalResult.Failure<SupplyOperationResult>(TransactionalError.NotFound);
+        }
+
+        if (supply.Status is SupplyStatus.Confirmed or SupplyStatus.ConfirmedWithDiscrepancy or SupplyStatus.RejectedAtDelivery)
+        {
+            // Task 11.9 - a second, non-replayed confirmation. A REPLAYED one never reaches this
+            // far: IdempotencyMiddleware intercepts it before the handler runs at all.
+            return TransactionalResult.Failure<SupplyOperationResult>(TransactionalError.AlreadyConfirmed);
+        }
+
+        if (supply.Status != SupplyStatus.Dispatched)
+        {
+            return TransactionalResult.Failure<SupplyOperationResult>(TransactionalError.InvalidStateTransition);
+        }
+
+        List<SupplyItem> lines = await _context.SupplyItems.Where(l => l.SupplyId == id).ToListAsync(cancellationToken);
+        Dictionary<Guid, SupplyItem> linesById = lines.ToDictionary(l => l.Id);
+
+        // All-or-nothing per document (task 11.5/11.11): every line of the supply must be
+        // addressed in one call - there is no partial-confirmation-now/rest-later concept here,
+        // unlike Phase 10's fulfilment.
+        if (command.Lines.Count != lines.Count)
+        {
+            return TransactionalResult.Failure<SupplyOperationResult>(TransactionalError.InvalidStateTransition);
+        }
+
+        await using IDbContextTransaction transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+        var postingLines = new List<StockPostingLine>();
+        var discrepancies = new List<Discrepancy>();
+
+        foreach (ConfirmSupplyLineCommand lineCommand in command.Lines)
+        {
+            if (!linesById.TryGetValue(lineCommand.SupplyItemId, out SupplyItem? line))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return TransactionalResult.Failure<SupplyOperationResult>(TransactionalError.NotFound);
+            }
+
+            // The line's own conversion factor (constant: DispatchedBaseQuantity was resolved
+            // against DispatchedQuantity, both in the line's fixed unit) applies to the actual.
+            decimal receivedBaseQuantity = lineCommand.ReceivedQuantity * (line.DispatchedBaseQuantity / line.DispatchedQuantity);
+
+            try
+            {
+                line.RecordReceipt(lineCommand.ReceivedQuantity, receivedBaseQuantity);
+            }
+            catch (InvalidOperationException)
+            {
+                // Task 11.2: 0 <= received <= dispatched, enforced by the entity itself.
+                await transaction.RollbackAsync(cancellationToken);
+                return TransactionalResult.Failure<SupplyOperationResult>(TransactionalError.InvalidStateTransition);
+            }
+
+            if (lineCommand.ReceivedQuantity > 0)
+            {
+                postingLines.Add(new StockPostingLine(
+                    supply.WarehouseId, line.ItemId, line.UnitId, -lineCommand.ReceivedQuantity, -receivedBaseQuantity,
+                    MovementType.RestaurantReceiptConfirmed, ReferenceType.Supply, supply.Id, UnitCost: null));
+            }
+
+            if (line.Variance != 0)
+            {
+                string discrepancyNumber = await _sequenceService.AllocateAsync(DocumentType.Discrepancy, cancellationToken);
+                discrepancies.Add(new Discrepancy(
+                    supply.CompanyId, discrepancyNumber, DiscrepancyType.SupplyReceiptVariance, ReferenceType.Supply, supply.Id,
+                    line.Id, supply.WarehouseId, supply.RestaurantId, line.ItemId, line.DispatchedBaseQuantity, receivedBaseQuantity));
+            }
+        }
+
+        try
+        {
+            if (postingLines.Count > 0)
+            {
+                await _stockPostingService.PostAsync(postingLines, cancellationToken);
+            }
+        }
+        catch (InsufficientStockException)
+        {
+            // docs/30 §7.1: full rollback, nothing written. The supply stays Dispatched - the
+            // supervisor's next step is a separate report-to-warehouse action (Phase 12), not
+            // anything this call does automatically.
+            await transaction.RollbackAsync(cancellationToken);
+            return TransactionalResult.Failure<SupplyOperationResult>(TransactionalError.InsufficientStock);
+        }
+
+        decimal totalDispatched = lines.Sum(l => l.DispatchedBaseQuantity);
+        decimal totalReceived = lines.Sum(l => l.ReceivedBaseQuantity ?? 0m);
+        SupplyStatus outcome = totalReceived switch
+        {
+            0 => SupplyStatus.RejectedAtDelivery,
+            _ when totalReceived >= totalDispatched => SupplyStatus.Confirmed,
+            _ => SupplyStatus.ConfirmedWithDiscrepancy,
+        };
+
+        supply.Confirm(_currentUserService.UserId, outcome);
+
+        foreach (Discrepancy discrepancy in discrepancies)
+        {
+            _context.Discrepancies.Add(discrepancy);
+        }
+
+        _auditLogger.Record(new AuditEntry(
+            "SUPPLY_CONFIRMED", nameof(Supply), supply.Id,
+            $"تم تأكيد استلام التوريد: {supply.DocumentNumber} - الحالة: {outcome}",
+            OldValues: null, NewValues: new { Outcome = outcome.ToString(), DiscrepancyCount = discrepancies.Count }, Domain.Enums.AuditResult.Success,
+            WarehouseId: supply.WarehouseId, RestaurantId: supply.RestaurantId));
+
+        SupplySummary summary = BuildSummary(supply, lines);
+        var result = new SupplyOperationResult(summary, []);
+
+        _idempotencyService.RecordResponse(idempotency.Key, idempotency.Endpoint, idempotency.RawRequestBody, StatusCodes.Status200OK, result);
+
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+
+            IdempotencyCheckResult recheck = await _idempotencyService.CheckAsync(idempotency.Key, idempotency.Endpoint, idempotency.RawRequestBody, cancellationToken);
+            if (recheck.Outcome == IdempotencyOutcome.Replay && recheck.CachedPayloadJson is not null)
+            {
+                SupplyOperationResult winner = JsonSerializer.Deserialize<SupplyOperationResult>(recheck.CachedPayloadJson)!;
+                return TransactionalResult.Success(winner);
+            }
+
+            return TransactionalResult.Failure<SupplyOperationResult>(TransactionalError.ConcurrencyConflict);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return TransactionalResult.Success(result);
     }
 
     private async Task<bool> IsInsufficientAsync(Guid warehouseId, Guid itemId, decimal baseQuantity, CancellationToken cancellationToken)

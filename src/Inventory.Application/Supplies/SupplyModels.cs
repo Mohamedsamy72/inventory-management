@@ -19,6 +19,12 @@ public sealed record SupplySummary(
     Guid? PreparedBy, DateTimeOffset? PreparedAt, Guid? DispatchedBy, DateTimeOffset? DispatchedAt,
     IReadOnlyList<SupplyLineSummary> Lines);
 
+/// <summary>Task 11.2 - the actual received quantity for one supply line, in that line's own
+/// unit (matching how it was dispatched). `0` is explicitly valid (a fully rejected line).</summary>
+public sealed record ConfirmSupplyLineCommand(Guid SupplyItemId, decimal ReceivedQuantity);
+
+public sealed record ConfirmSupplyCommand(IReadOnlyList<ConfirmSupplyLineCommand> Lines);
+
 /// <summary>Task 10.6 (ADR-019): the item ids whose fulfilled/dispatched base quantity exceeded
 /// `available` (balance − in-transit) AT THE MOMENT of this specific operation - a live,
 /// point-in-time advisory, never persisted, never blocking, never a reservation. Only the

@@ -26,6 +26,7 @@ internal static class TransactionalErrorWriter
             TransactionalError.EmptyDocument => (StatusCodes.Status400BadRequest, ErrorCodes.EmptyDocument),
             TransactionalError.ConcurrencyConflict => (StatusCodes.Status409Conflict, ErrorCodes.ConcurrencyConflict),
             TransactionalError.ServingWarehouseUnavailable => (StatusCodes.Status409Conflict, ErrorCodes.ServingWarehouseUnavailable),
+            TransactionalError.AlreadyConfirmed => (StatusCodes.Status409Conflict, ErrorCodes.AlreadyConfirmed),
             _ => (StatusCodes.Status400BadRequest, ErrorCodes.InvalidStateTransition),
         };
 

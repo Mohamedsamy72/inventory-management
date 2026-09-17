@@ -55,6 +55,9 @@ internal static class ErrorCodes
     public const string ConcurrencyConflict = "CONCURRENCY_CONFLICT";
     public const string FinancialAccessDenied = "FINANCIAL_ACCESS_DENIED";
 
+    // Phase 11 (docs/30 §7, docs/04 §11) - already in docs/13's original catalogue.
+    public const string AlreadyConfirmed = "ALREADY_CONFIRMED";
+
     public static string ArabicMessageFor(string code) => code switch
     {
         InvalidCredentials => "رقم الجوال أو كلمة المرور غير صحيحة.",
@@ -81,6 +84,7 @@ internal static class ErrorCodes
         EmptyDocument => "يجب أن يحتوي المستند على صنف واحد على الأقل.",
         ConcurrencyConflict => "تم تعديل السجل بواسطة مستخدم آخر، يرجى تحديث الصفحة والمحاولة مجدداً.",
         FinancialAccessDenied => "غير مصرح لك بالاطلاع على التكاليف والبيانات المالية.",
+        AlreadyConfirmed => "تم تأكيد استلام هذه التوريدة مسبقاً ولا يمكن تكرار العملية.",
         _ => throw new ArgumentOutOfRangeException(nameof(code), code, "Unknown error code."),
     };
 
@@ -110,6 +114,7 @@ internal static class ErrorCodes
         EmptyDocument => "Document must contain at least one line.",
         ConcurrencyConflict => "Record was modified by another user.",
         FinancialAccessDenied => "Financial data access is restricted to Owner.",
+        AlreadyConfirmed => "This supply has already been confirmed.",
         _ => throw new ArgumentOutOfRangeException(nameof(code), code, "Unknown error code."),
     };
 }

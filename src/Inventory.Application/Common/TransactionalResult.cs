@@ -19,6 +19,11 @@ public enum TransactionalError
     /// inactive. Maps to <c>409 SERVING_WAREHOUSE_UNAVAILABLE</c>; the server never falls back
     /// to another warehouse.</summary>
     ServingWarehouseUnavailable,
+
+    /// <summary>Task 11.9 - a second, non-replayed confirmation of a supply already past
+    /// `Dispatched`. Distinct from the generic <see cref="InvalidStateTransition"/> because
+    /// docs/13 gives this specific case its own catalogue code, <c>409 ALREADY_CONFIRMED</c>.</summary>
+    AlreadyConfirmed,
 }
 
 public sealed record TransactionalResult<T>(bool Succeeded, T? Value, TransactionalError Error, string? ErrorDetail = null);

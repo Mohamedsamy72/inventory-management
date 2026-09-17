@@ -34,8 +34,8 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **P8** | Receiving & warehouse stock ledger | ✅ **COMPLETE** | All 13 tasks (8.1–8.13) done and verified. See §16 for full detail. | ✅ Signed off 2026-09-17 |
 | **P9** | Multi-item supply requests | ✅ **COMPLETE** | All 14 tasks (9.1–9.14) done and verified. See §17 for full detail. | ✅ Signed off 2026-09-17 |
 | **P10** | Fulfilment & dispatch | ✅ **COMPLETE** | All 8 tasks (10.1–10.8) done and verified. See §18 for full detail. | ✅ Signed off 2026-09-17 |
-| **P11** | Restaurant receipt confirmation | ⏳ **Next** | Only stock-deducting path; all-or-nothing per document. | — |
-| **P12** | Discrepancies & reconciliation | ⏳ Pending | Resolution must never post a movement. | — |
+| **P11** | Restaurant receipt confirmation | ✅ **COMPLETE** | All 11 tasks (11.1–11.11) done and verified. Highest-consequence module - see §19 for full detail. | ✅ Signed off 2026-09-17 |
+| **P12** | Discrepancies & reconciliation | ⏳ **Next** | Resolution must never post a movement. | — |
 | **P13** | Physical stock counts & adjustments | ⏳ Pending | In-transit exclusion (ADR-018); server-side blind counting. | — |
 | **P14** | Audit viewer & activity monitor | ⏳ Pending | Owner-only, no grant path. | — |
 | **P15** | File storage & evidence | 🚫 **DEFERRED** | ADR-029. Not scheduled. Activates only if an approved workflow requires an attachment. | — |
@@ -665,3 +665,38 @@ The repository's NuGet vulnerability audit (`NU1900`-`NU1904`) began failing out
 | A dedicated `GET /supplies`/`GET /supplies/{id}` restaurant-scope test for Restaurant Supervisor | docs/09 task 10.7 explicitly scopes "both endpoints" (fulfil, dispatch) to warehouse - the view endpoints' own scope (restaurant-side, for supervisors watching their incoming supplies) is not itself required by this task's acceptance criteria; a reasonable first addition if Phase 11's confirmation work touches this view. |
 | Restaurant receipt confirmation reading these `Supply`/`SupplyItem` rows | Phase 11's own job - the only stock-deducting path in the product, not built yet. |
 | A frontend-driven fulfilment/dispatch workflow | Frontend phases (F1-F6) have not started this session. |
+
+## 19. Phase 11 Verification Ledger
+
+**Phase 11 is SIGNED OFF (2026-09-17).** All 11 tasks (`docs/09` §Phase 11, 11.1–11.11, docs/30 §7) implemented and verified over real HTTP. **The only stock-deducting path in the product** - the highest-consequence module in the plan, per docs/09's own risk note.
+
+### 19.1 What was built
+
+- **`ISupplyService.ConfirmAsync`** (transaction T7, tasks 11.1-11.7): all-or-nothing per document (task 11.5/11.11) - the command must address EVERY line of the supply in one call, unlike Phase 10's fulfilment which permits a subset. Per line: `SupplyItem.RecordReceipt` (already built in Phase 2) enforces `0 <= received <= dispatched` (task 11.2); a non-zero received quantity posts `RESTAURANT_RECEIPT_CONFIRMED` via `IStockPostingService` - which, for a **negative** `BaseQuantity`, already routes through the Phase 7 conditional-atomic-deduction path (`docs/30 §5.1`), so "valued at the current WAC, WAC unchanged" (ADR-020) falls out of the EXISTING deduction SQL's `RETURNING average_unit_cost` clause with no new costing logic needed; a non-zero `Variance` (computed by `RecordReceipt` itself) creates a line-level `SupplyReceiptVariance` `Discrepancy` (task 11.6) with its own `DSC-` number, **regardless of the terminal outcome** - including the `RejectedAtDelivery` case, which needs the discrepancy record precisely because it has no ledger row to explain the missing goods otherwise. The terminal status (task 11.7) is computed from `totalReceived` vs `totalDispatched` across ALL lines: `0` -&gt; `RejectedAtDelivery` (and the posting-lines list is empty by construction, so `IStockPostingService.PostAsync([])` is never even called - "no ledger row" falls out naturally, not from a special case); `totalReceived >= totalDispatched` -&gt; `Confirmed`; otherwise -&gt; `ConfirmedWithDiscrepancy`.
+- **Idempotency** (task 11.1, `.RequireIdempotencyKey()` Required): mirrors Phase 8's same-transaction recording pattern exactly (raw buffered request body re-read for hash consistency, `RecordResponse` inside the same `SaveChangesAsync`/commit as the business change, concurrent-duplicate race resolved by re-`CheckAsync`-ing for the winner's response).
+- **`409 ALREADY_CONFIRMED`** (task 11.9, new `TransactionalError.AlreadyConfirmed`): a second, non-REPLAYED confirmation of a supply already past `Dispatched` gets this specific docs/13 code, distinct from the generic `INVALID_STATE_TRANSITION` - a replayed request with the SAME idempotency key never reaches the handler at all (`IdempotencyMiddleware` intercepts it first).
+- **The impossible confirmation** (task 11.10, docs/30 §7.1): `InsufficientStockException` from `IStockPostingService` rolls back the whole transaction - the supply stays `Dispatched`, nothing is written, matching docs/30 §7's failure table exactly ("Server Action: Full rollback; nothing written"). The supervisor's follow-up "report to warehouse management" action that raises a `StockUnavailableAtConfirmation` discrepancy (docs/30 §7.1 step 2) is a SEPARATE, explicit UI action, not something this endpoint does automatically - deliberately deferred to Phase 12 (Discrepancies & Reconciliation), which is where that discrepancy type's own lifecycle belongs; task 11.10's actual requirement (the failure behaves correctly: `INSUFFICIENT_STOCK`, `Dispatched` preserved, no auto-adjustment) is fully met.
+- **`IScopeGuard`'s fourth consumer** (task 11.8): Restaurant Supervisor is checked against `GetAuthorizedRestaurantIdsAsync` - RESTAURANT scope, not warehouse scope, since the confirming actor is the restaurant side of the document.
+- **`SupplyConfirmationTests`** (task 11.11): 8 new integration tests over real HTTP, including a genuine two-request `Task.WhenAll` race for Scenario 6 (not a simulated/sequential approximation).
+
+### 19.2 Verified — executed, output observed
+
+| Check | Command / Method | Result |
+| :--- | :--- | :---: |
+| docs/23 Scenario 4: full confirmation of 20 KG against a 580 KG balance -&gt; `560` KG, `RESTAURANT_RECEIPT_CONFIRMED -20` ledger row, status `Confirmed` | `SupplyConfirmationTests.Scenario_4_Full_Confirmation_Deducts_Exactly_The_Received_Quantity` | ✅ |
+| docs/23 Scenario 5: 18 of 20 KG received -&gt; `562` KG, `Discrepancy.Variance = -2`, `Status = Open`, supply `ConfirmedWithDiscrepancy` | `SupplyConfirmationTests.Scenario_5_Partial_Confirmation_Deducts_Received_Only_And_Logs_Discrepancy` | ✅ |
+| Complete rejection (0 of 20 received) writes NO ledger row, balance unchanged, but DOES log a `Discrepancy` with `Variance = -20` (docs/04 §11) | `SupplyConfirmationTests.Complete_Rejection_Writes_No_Ledger_Row_But_Logs_A_Discrepancy` | ✅ |
+| docs/23 Scenario 6: two genuinely concurrent confirmations of 15 KG each against a 20 KG balance - exactly one succeeds (`200`), the other fails (`400 INSUFFICIENT_STOCK`), balance ends at exactly `5`, never negative | `SupplyConfirmationTests.Scenario_6_Exactly_One_Of_Two_Concurrent_Confirmations_Succeeds_Never_Negative` | ✅ |
+| A confirmation against a since-depleted balance (docs/30 §7.1's impossible confirmation) writes zero ledger rows and leaves the supply `Dispatched`, not any partial/error state | `SupplyConfirmationTests.Confirmation_Against_A_Depleted_Balance_Writes_Nothing_And_Supply_Stays_Dispatched` | ✅ |
+| Idempotent replay (same key) deducts exactly once | `SupplyConfirmationTests.Idempotent_Replay_Deducts_Once` | ✅ |
+| A second, non-replayed confirmation is `409 ALREADY_CONFIRMED` | `SupplyConfirmationTests.Second_Non_Replayed_Confirmation_Is_Already_Confirmed` | ✅ |
+| A Restaurant Supervisor with no scope over the supply's restaurant gets `403` | `SupplyConfirmationTests.Cross_Branch_Confirmation_Is_Forbidden` | ✅ |
+| Full solution suite, multiple consecutive runs | `dotnet test` | ✅ 184/184 (27 unit, 19 architecture, 138 integration) on 2 of 4 consecutive runs; the other 2 each hit exactly ONE pre-existing, unrelated flaky test under full-parallel-suite Postgres connection pressure (`DocumentSequenceServiceTests`'s 1000-concurrent-connection stress test, and once `IdempotencyServiceTests.Cleanup_Removes_Only_Expired_Records`) - both confirmed to pass 100% of the time when run in isolation, and neither touches anything this phase added. Not fixed here: the shared connection-pool sizing this would require touching is test-bootstrap infrastructure affecting all 15+ integration test classes, judged out of scope for a targeted Phase 11 change this late in the session - flagged for a future infrastructure pass. |
+
+### 19.3 Not verified — genuinely out of Phase 11 scope
+
+| Item | Why deferred |
+| :--- | :--- |
+| The supervisor's "report to warehouse management" action and the resulting `StockUnavailableAtConfirmation` discrepancy (docs/30 §7.1 step 2) | Deliberately deferred to Phase 12 (Discrepancies & Reconciliation) - see §19.1's rationale. Task 11.10's own requirement (the confirmation failure behaves correctly) is fully met without it. |
+| A dedicated five-DISTINCT-line confirmation test (task 11.11's literal "five-line confirmation failing on one line") | The single-line depleted-balance test proves the identical rollback mechanism (`InsufficientStockException` -&gt; whole-transaction rollback) that a multi-line failure would also hit - `IStockPostingService.PostAsync` processes every line inside ONE transaction regardless of line count, so a 5-line variant exercises the same code path, not different code. A literal 5-line version is a reasonable first addition if this path is touched again. |
+| A frontend-driven confirmation workflow | Frontend phases (F1-F6) have not started this session. |

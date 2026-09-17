@@ -22,4 +22,16 @@ public interface ISupplyService
 
     /// <summary>`Prepared` only (the entity's own guard) - never after dispatch.</summary>
     Task<TransactionalResult<SupplySummary>> CancelAsync(Guid id, CancellationToken cancellationToken);
+
+    /// <summary>Transaction T7 (docs/30 §7.1) - the ONLY stock-deducting path in the product.
+    /// Posts `RESTAURANT_RECEIPT_CONFIRMED` for the actual received quantity per line (valued at
+    /// the current WAC, which stays unchanged - ADR-020), creates a line-level
+    /// `SupplyReceiptVariance` <c>Discrepancy</c> for every non-zero variance, and sets
+    /// the terminal status: all-full -&gt; `Confirmed`; any variance -&gt; `ConfirmedWithDiscrepancy`;
+    /// all zero -&gt; `RejectedAtDelivery` with no ledger row at all (docs/04 §11 - the warehouse
+    /// balance already reflects the goods, since dispatch never deducted them). Any short line's
+    /// `InsufficientStockException` rolls back the ENTIRE confirmation - nothing partial is ever
+    /// written (docs/30 §7.1's "impossible confirmation": the supply stays `Dispatched`,
+    /// resolved only by a later physical stock count, never an auto-adjustment).</summary>
+    Task<TransactionalResult<SupplyOperationResult>> ConfirmAsync(Guid id, ConfirmSupplyCommand command, IdempotencyContext idempotency, CancellationToken cancellationToken);
 }
