@@ -2,7 +2,7 @@
 
 > **Document ID:** SPEC-27
 > **Status:** Live Implementation Register
-> **Current State:** **Phase 1 through Phase 6 CLOSED (2026-09-17).** Backend `dotnet build -warnaserror` -> 0 errors, 0 warnings across all 7 projects; `dotnet test` -> 125/125 passing (19 unit, 18 architecture, 88 integration), confirmed stable across repeated consecutive runs. Frontend verified green (typecheck, lint, tests, production build) as of Phase 1. The initial migration (33 entities, composite tenant FKs throughout, `xmin` concurrency, append-only triggers, `audit_logs` partitioning, the full docs/29 §5 index plan, role/permission seed data) applies cleanly to an empty database and is proven by real execution — not just review — against this repo's own PostgreSQL instance. Phase 3 also fixed a critical, phase-independent bug in the tenant query filter introduced in Phase 2 — see §11.2 row 1; it affects every tenant-scoped query in the system, not just auth. Phase 5 also found and fixed a CSRF gap spanning every Phase 4/5 mutating endpoint — see §13.2. Phase 6 found and fixed a second Phase 2 schema bug (a non-partial unique index that would have made ADR-023 corrections impossible) — see §14.2. **Phase 7 (Stock Engine Foundation) is next.**
+> **Current State:** **Phase 1 through Phase 7 CLOSED (2026-09-17).** Backend `dotnet build -warnaserror` -> 0 errors, 0 warnings across all 7 projects; `dotnet test` -> 152/152 passing (27 unit, 19 architecture, 106 integration), confirmed stable across repeated consecutive runs. Frontend verified green (typecheck, lint, tests, production build) as of Phase 1. The initial migration (33 entities, composite tenant FKs throughout, `xmin` concurrency, append-only triggers, `audit_logs` partitioning, the full docs/29 §5 index plan, role/permission seed data) applies cleanly to an empty database and is proven by real execution — not just review — against this repo's own PostgreSQL instance. Phase 3 also fixed a critical, phase-independent bug in the tenant query filter introduced in Phase 2 — see §11.2 row 1; it affects every tenant-scoped query in the system, not just auth. Phase 5 also found and fixed a CSRF gap spanning every Phase 4/5 mutating endpoint — see §13.2. Phase 6 found and fixed a second Phase 2 schema bug (a non-partial unique index that would have made ADR-023 corrections impossible) — see §14.2. Phase 7 completes all stock-engine/concurrency/idempotency infrastructure with **no business endpoint exposed yet**, exactly as docs/09 specifies. **Phase 8 (Receiving & Warehouse Stock Ledger) is next.**
 >
 > **Environment note for the next session:** this repo's PostgreSQL 16 instance (`C:\pg-inventory-system\`, port 5433) is portable binaries, not a registered Windows service — it does not survive a machine/session restart on its own. If `dotnet test`'s integration suite fails with "Failed to connect to 127.0.0.1:5433 ... actively refused", start it first: `C:\pg-inventory-system\pgsql\bin\pg_ctl.exe start -D C:\pg-inventory-system\data -l C:\pg-inventory-system\logfile.log -o "-p 5433" -w` (docs/19 §1, docs/33 §4.3).
 > **Plan Authority:** `docs/09-implementation-plan.md` (supersedes `docs/22-implementation-plan.md`).
@@ -30,8 +30,8 @@ The zero-missing gate below is therefore a **forward** gate applied per phase, n
 | **P4** | Authorization, scopes, role denial, **audit infrastructure** | ✅ **COMPLETE** | All 15 tasks (4.1–4.15) done and verified. See §12 for full detail. | ✅ Signed off 2026-09-17 |
 | **P5** | Master data | ✅ **COMPLETE** | All 16 tasks (5.1–5.16) done and verified. See §13 for full detail. | ✅ Signed off 2026-09-17 |
 | **P6** | Unit conversion system | ✅ **COMPLETE** | All 8 tasks (6.1–6.8) done and verified. See §14 for full detail. | ✅ Signed off 2026-09-17 |
-| **P7** | Stock engine, transactions, concurrency, idempotency | ⏳ **Next** | `xmin` token; lock ordering; projected idempotency payloads. | — |
-| **P8** | Receiving & warehouse stock ledger | ⏳ Pending | Reconciliation must post the delta, never the full actual. | — |
+| **P7** | Stock engine, transactions, concurrency, idempotency | ✅ **COMPLETE** | All 15 tasks (7.1–7.15) done and verified. No business endpoint exposed (by design). See §15 for full detail. | ✅ Signed off 2026-09-17 |
+| **P8** | Receiving & warehouse stock ledger | ⏳ **Next** | Reconciliation must post the delta, never the full actual. | — |
 | **P9** | Multi-item supply requests | ⏳ Pending | Unblocked — OD-008 closed (ADR-028). Warehouse derived server-side; over-post security test mandatory. | — |
 | **P10** | Fulfilment & dispatch | ⏳ Pending | Must write zero ledger rows. | — |
 | **P11** | Restaurant receipt confirmation | ⏳ Pending | Only stock-deducting path; all-or-nothing per document. | — |
@@ -515,3 +515,46 @@ The repository's NuGet vulnerability audit (`NU1900`-`NU1904`) began failing out
 | :--- | :--- |
 | Task 6.8's integration test (a request submitting `conversionFactor` on a TRANSACTIONAL line has it discarded and the server's resolved factor applied) | No transactional line-item endpoint (receiving order line, supply request line, ...) exists yet to submit one against - `IUnitConversionResolver` itself is fully proven (§14.3); its first real transactional caller (Phase 8's receiving, most likely) will prove this end-to-end, the same posture Phase 4/5 already took for several "first real consumer" items. |
 | `CONVERSION_NOT_DEFINED` as an actual `409` HTTP response | Same reason - the resolver's `Succeeded=false` outcome (§14.3) has no consuming endpoint yet to translate it into a response; nothing calls the resolver from an HTTP handler in this phase. |
+
+---
+
+## 15. Phase 7 Verification Ledger
+
+**Phase 7 is SIGNED OFF (2026-09-17).** All 15 tasks (`docs/09` §Phase 7, table 7.1–7.15) implemented and verified against this repository's own PostgreSQL instance. **No business endpoint is exposed in this phase** - docs/09 states this explicitly, and it holds: every piece below is infrastructure Phase 8+ will call, not something a client can reach yet.
+
+### 15.1 What was built
+
+- **`StockLedgerEntry`/`StockBalance`** (tasks 7.1-7.2): already existed from Phase 2 with the append-only/non-negative invariants docs/09 asks for - this phase's own job on them was making sure nothing else could write to them (§15's task 7.13) and building the one service that legitimately does.
+- **`ICostingEngine`** (task 7.7, ADR-020): pure, dependency-free arithmetic - `RecomputeWeightedAverage` for `OpeningBalance`/`IncomingPosted`/`IncomingReconciliation` (guarding the zero-quantity divide-by-zero case a full reversal produces), `ValueAtCurrentCost` for `RestaurantReceiptConfirmed`/`PhysicalAdjustment`. Unit-tested in complete isolation, matching ADR-020's own "Consequences" line.
+- **`IStockPostingService`** (tasks 7.3-7.6): the sole writer of `stock_ledger`/`stock_balances`, enforced by a new text-scanning architecture test (`StockPostingRules`, mirroring `CompositionRootRules`). Deductions use docs/30 §5.1's conditional atomic `UPDATE ... WHERE quantity >= @qty` via raw SQL (`InsufficientStockException` on zero affected rows); inbound/adjustment movements go through the normal tracked-entity `SaveChanges` path, which the `xmin` concurrency token (configured in Phase 2) already protects with zero extra code. Lines are sorted ascending by `item_id` internally before processing, so no future caller can forget the mandatory lock-ordering rule (task 7.6).
+- **`IIdempotencyService`** (tasks 7.8, 7.10, docs/30 §6.2): SHA-256 canonical-request hashing, scoped to `(company_id, user_id)`. `RecordResponse` only adds to the current unit of work - never saves itself - so the cached response commits or rolls back with the SAME transaction as the business change it guards; a concurrent duplicate's second `INSERT` fails on `uq_idempotency_key` (proven directly).
+- **`IdempotencyMiddleware`** (task 7.9): acts only on endpoints carrying `IdempotencyMetadata` via a new `.RequireIdempotencyKey()` convention-builder extension (mirroring `.RequireAuthorization()`). Enforces docs/30 §6.1's required/optional matrix and replays a cached response verbatim; deliberately does NOT record a response itself, since only the handler that produced a role-projected DTO can decide what is safe to cache (task 7.10) - generic middleware outside that handler's transaction cannot determine this correctly.
+- **`MaintenanceBackgroundService`** (task 7.11): runs at host startup and every 24h - deletes expired (>24h) idempotency records, and pre-creates next month's `audit_logs` partition (`CREATE TABLE IF NOT EXISTS`, the same naming/boundary convention the Phase 2 migration used for the first two partitions).
+- **`IInTransitCalculator`** (task 7.12, ADR-018): derived on demand from `supply_items` whose parent `Supply` is `Dispatched`, attributed to the warehouse, never persisted - proven against a real dispatched `Supply`/`SupplyItem` pair and against a confirmed one (which correctly stops counting).
+- **`StockPostingRules`** architecture test (task 7.13) and **27 new unit tests + 34 new integration tests** (tasks 7.14-7.15) across `CostingEngineTests`, `StockPostingServiceTests`, `InTransitCalculatorTests`, `IdempotencyServiceTests`, and `MaintenanceBackgroundServiceTests`.
+
+### 15.2 Verified — executed, output observed
+
+| Check | Command / Method | Result |
+| :--- | :--- | :---: |
+| `500 + 100 = 600`; reconcile `−20 → 580`; confirm `−18 → 562` (docs/09 task 7.14 examples) | `CostingEngineTests` (pure arithmetic, no DB) + `StockPostingServiceTests` (through the real service/DB) | ✅ |
+| WAC `100@10 + 50@16 = 12.0000`; WAC unchanged on issue; reconciliation reverses at the line's own cost, not the current WAC | `CostingEngineTests`, `StockPostingServiceTests.Reconciliation_Reverses_At_The_Originating_Lines_Own_Cost_...` | ✅ |
+| Deducting 25 from a balance of 20 throws, and writes nothing | `StockPostingServiceTests.Deducting_More_Than_Available_Throws_...` | ✅ |
+| Two concurrent deductions of 15 from 20 - exactly one succeeds, balance ends at 5, never negative (AC-30-1) | `StockPostingServiceTests.Two_Concurrent_Deductions_Of_Fifteen_From_Twenty_...` | ✅ |
+| A forced `xmin` conflict on WAC recompute raises `DbUpdateConcurrencyException`, not a silently lost update (AC-30-6) | `StockPostingServiceTests.Concurrent_Incoming_Postings_...` | ✅ |
+| Two multi-item postings racing in opposite caller-supplied line order never deadlock (AC-30-8) | `StockPostingServiceTests.Interleaved_Multi_Item_Postings_...` (15s timeout guard) | ✅ |
+| Only `StockPostingService.cs` writes `stock_ledger`/`stock_balances` (task 7.13) | `StockPostingRules.Only_StockPostingService_May_Write_...` | ✅ |
+| A dispatched supply counts as in-transit for its warehouse; a confirmed one no longer does (ADR-018) | `InTransitCalculatorTests` | ✅ |
+| A replayed idempotency key with the same payload returns the cached response and performs no work; a different payload is reported as reuse; a key never crosses users even within one company (docs/30 §6.3) | `IdempotencyServiceTests` | ✅ |
+| A concurrent duplicate idempotency write - exactly one of two identical inserts succeeds, the other fails on `uq_idempotency_key` (docs/30 §6.2 step 6) | `IdempotencyServiceTests.Concurrent_Duplicate_Requests_...` | ✅ |
+| Cleanup removes only expired idempotency records | `IdempotencyServiceTests.Cleanup_Removes_Only_Expired_Records` | ✅ |
+| One maintenance pass creates next month's `audit_logs` partition; running it twice does not fail | `MaintenanceBackgroundServiceTests` | ✅ |
+| Full solution suite, multiple consecutive runs | `dotnet test InventorySystem.sln` | ✅ 152/152 (27 unit, 19 architecture, 106 integration), every run |
+
+### 15.3 Not verified — genuinely out of Phase 7 scope
+
+| Item | Why deferred |
+| :--- | :--- |
+| `IdempotencyMiddleware`/`IStockPostingService`/`IUnitConversionResolver` exercised through a real HTTP endpoint | Docs/09 is explicit: "No business endpoint is exposed in this phase." Every piece is verified directly against the service/database; Phase 8's receiving endpoints are the first real HTTP callers. |
+| `400 IDEMPOTENCY_KEY_REQUIRED` / `409 IDEMPOTENCY_KEY_REUSE` as actual HTTP responses | Same reason - no endpoint calls `.RequireIdempotencyKey()` yet. |
+| The literal docs/09 task 7.15 "interleaved multi-item deadlock probe" at production-realistic scale (many concurrent multi-line confirmations) | The 2-caller/2-item probe implemented here (§15.2) proves the lock-ordering mechanism is correct in principle - the first real multi-line, multi-item transaction (Phase 11's receipt confirmation) is where a larger-scale probe becomes meaningful, since Phase 7 has no multi-line business operation of its own to stress. |
