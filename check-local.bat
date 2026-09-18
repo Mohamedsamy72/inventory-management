@@ -59,7 +59,15 @@ if exist "%ROOT%frontend\node_modules" (
 echo.
 
 echo [Migrations]
-echo   no migration exists until Phase 2 - nothing to apply
+set "PENDING_FOUND="
+for /f "delims=" %%m in ('dotnet ef migrations list --project "%ROOT%src\Inventory.Infrastructure" --startup-project "%ROOT%src\Inventory.Api" 2^>nul ^| findstr /V "^Build\|^The Entity Framework"') do (
+  echo %%m | findstr /C:"(Pending)" >nul && set "PENDING_FOUND=1"
+)
+if defined PENDING_FOUND (
+  echo   status        : PENDING migrations exist - run: dotnet ef database update --project src\Inventory.Infrastructure --startup-project src\Inventory.Api
+) else (
+  echo   status        : all migrations applied
+)
 echo.
 
 echo ============================================================

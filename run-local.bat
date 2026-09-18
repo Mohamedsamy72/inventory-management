@@ -52,7 +52,7 @@ if errorlevel 1 (
   echo.
   echo    This repo's dedicated instance runs on port 5433, not the
   echo    PostgreSQL default 5432, because 5432 is already held by an
-  echo    unrelated project on this machine (see docs/33 section 4.3).
+  echo    unrelated project on this machine ^(see docs/33 section 4.3^).
   echo    Start it with: C:\pg-inventory-system\pgsql\bin\pg_ctl.exe
   echo    -D C:\pg-inventory-system\data -l logfile start
   echo.
@@ -68,7 +68,12 @@ echo   PostgreSQL      : listening on 5433
 
 REM ---- 3. Migrations ------------------------------------------------------
 echo [3/8] Applying EF Core migrations (forward only)...
-echo   (no migration exists until Phase 2 - this is a no-op today)
+dotnet ef database update --project "%ROOT%src\Inventory.Infrastructure" --startup-project "%ROOT%src\Inventory.Api"
+if errorlevel 1 (
+  echo   FAILED: EF Core migrations did not apply. See the output above.
+  goto :fail
+)
+echo   Migrations      : up to date
 
 REM ---- 4. Backend ---------------------------------------------------------
 echo [4/8] Starting the API...
