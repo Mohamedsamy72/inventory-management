@@ -145,6 +145,26 @@ export default function DashboardPage() {
     );
   }
 
+  if (profile.role === 'User' || profile.role === null) {
+    // docs/03 §1 point 5: "User" is a base authenticated account with ZERO default
+    // capabilities - access exists only through explicit UserPermission grants, which
+    // vary per account and have no fixed widget set docs/12 could specify. Showing the
+    // Owner/Admin overview's title and widgets here would be actively misleading (every
+    // widget would 403 for an ungranted account) - and inventing a bespoke "User
+    // dashboard" figure with no specification behind it is exactly what docs/12 §2.3
+    // forbids. The permitted screens, if any, are reachable via the sidebar
+    // (`getNavItemsForRole` already renders nothing extra for this role beyond what its
+    // real permissions unlock elsewhere in the app).
+    return (
+      <div className="flex flex-col gap-4">
+        <h1 className="font-heading text-xl font-medium text-foreground">مرحباً بك</h1>
+        <p className="text-sm text-muted-foreground">
+          لا توجد صلاحيات افتراضية لهذا الحساب. استخدم القائمة الجانبية للوصول إلى الشاشات المصرح بها لك، إن وجدت.
+        </p>
+      </div>
+    );
+  }
+
   // Owner / Admin: the same three real, tenant-wide widget families.
   return (
     <div className="flex flex-col gap-4">
