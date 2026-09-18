@@ -72,8 +72,18 @@ export default function SupplyRequestsPage() {
     return restaurants.find((restaurant) => restaurant.id === id)?.nameArabic ?? '—';
   }
 
+  useEffect(() => {
+    // The single-scope auto-select must react to `restaurants` finishing its async fetch, not
+    // just the moment the dialog was opened - opening the dialog before that fetch resolves
+    // previously left `restaurantId` stuck at '' forever (no dropdown either, since it only
+    // renders for >1 option), permanently disabling "إنشاء".
+    if (dialogOpen && !restaurantId && scopedRestaurants.length === 1) {
+      setRestaurantId(scopedRestaurants[0]!.id);
+    }
+  }, [dialogOpen, restaurantId, scopedRestaurants]);
+
   function openCreate() {
-    setRestaurantId(scopedRestaurants.length === 1 ? scopedRestaurants[0]!.id : '');
+    setRestaurantId('');
     setFormError(null);
     setDialogOpen(true);
   }
