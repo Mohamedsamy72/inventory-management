@@ -119,6 +119,7 @@ export default function SupplyRequestPage() {
   const [lineError, setLineError] = useState<string | null>(null);
   const [isSavingLine, setIsSavingLine] = useState(false);
 
+  const [submitReviewOpen, setSubmitReviewOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -211,6 +212,7 @@ export default function SupplyRequestPage() {
     setIsSubmittingRequest(true);
     try {
       await apiClient.post(`/api/v1/supply-requests/${request!.id}/submit`);
+      setSubmitReviewOpen(false);
       await load();
     } catch (caught) {
       setSubmitError(caught instanceof ApiError ? caught.messageAr : 'تعذر إرسال الطلب');
@@ -336,11 +338,9 @@ export default function SupplyRequestPage() {
         </Button>
       ) : null}
 
-      {submitError ? <ErrorBanner message={submitError} /> : null}
-
       <div className="flex items-center gap-2">
         {isDraft && canCreate ? (
-          <Button loading={isSubmittingRequest} disabled={request.lines.length === 0} onClick={handleSubmitRequest}>
+          <Button disabled={request.lines.length === 0} onClick={() => setSubmitReviewOpen(true)}>
             إرسال الطلب الى المخزن
           </Button>
         ) : null}
@@ -405,6 +405,36 @@ export default function SupplyRequestPage() {
           </Button>
         </form>
       ) : null}
+
+      <Dialog open={submitReviewOpen} onOpenChange={setSubmitReviewOpen}>
+        <DialogContent>
+          <div className="flex flex-col gap-4">
+            <DialogHeader>
+              <DialogTitle>مراجعة طلب التوريد</DialogTitle>
+              <DialogDescription>
+                راجع الأصناف والكميات المطلوبة قبل إرسال الطلب. بعد إرسال الطلب لا يمكنك تعديل الكميات من هذه الشاشة.
+              </DialogDescription>
+            </DialogHeader>
+
+            {submitError ? <ErrorBanner message={submitError} /> : null}
+
+            <ul className="flex flex-col gap-1.5 text-sm">
+              {request.lines.map((line) => (
+                <li key={line.id} className="flex items-center justify-between rounded-md bg-muted px-3 py-1.5">
+                  <span>{itemName(line.itemId)}</span>
+                  <span className="font-medium text-foreground">{formatQuantity(line.requestedQuantity, unitName(line.unitId))}</span>
+                </li>
+              ))}
+            </ul>
+
+            <DialogFooter>
+              <Button loading={isSubmittingRequest} onClick={handleSubmitRequest}>
+                إرسال الطلب
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={lineDialogOpen} onOpenChange={setLineDialogOpen}>
         <DialogContent>

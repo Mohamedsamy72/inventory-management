@@ -34,8 +34,14 @@ interface Supply {
   documentNumber: string;
   warehouseId: string;
   restaurantId: string;
+  supplyRequestId: string | null;
   status: 'Prepared' | 'Dispatched' | 'Confirmed' | 'ConfirmedWithDiscrepancy' | 'RejectedAtDelivery' | 'Cancelled';
   lines: SupplyLine[];
+}
+
+interface SupplyRequestLine {
+  itemId: string;
+  requestedQuantity: number;
 }
 
 interface NamedOption {
@@ -54,6 +60,17 @@ interface NamedOption {
  * `SupplyReceiptVariance` discrepancy (Phase 12), where a reason is captured at RESOLVE time
  * via `/discrepancies/{id}/resolve`, not at confirm time. Inventing an unsent reason field here
  * would be exactly the UI theater docs/12 §2.3 forbids.
+ *
+ * This is deliberately the ONLY screen where "تأكيد الاستلام" appears - gated purely by the
+ * `supplies:confirm` permission (held by Restaurant Supervisor, not Warehouse Staff, per
+ * docs/03's role defaults), never a role-name check, so the workflow boundary tracks whatever
+ * the backend's actual authorization model grants. It is distinct from both the request-review
+ * step (`supply-requests/[id]`, before submit) and warehouse receiving (`receiving/[id]`, goods
+ * arriving from a supplier) - those are different documents entirely, not alternate copy on this
+ * same dialog. Also shows the item's originally REQUESTED quantity (from the source supply
+ * request, via `supplyRequestId`) alongside what the warehouse actually DISPATCHED and what the
+ * restaurant is RECORDING as received, so a shortfall introduced at fulfilment time is visible
+ * here too, not just a dispatched-vs-received comparison that would hide it.
  */
 export default function SupplyPage() {
   const params = useParams<{ id: string }>();
@@ -68,6 +85,7 @@ export default function SupplyPage() {
   const [restaurants, setRestaurants] = useState<NamedOption[]>([]);
   const [items, setItems] = useState<NamedOption[]>([]);
   const [units, setUnits] = useState<NamedOption[]>([]);
+  const [requestedQuantities, setRequestedQuantities] = useState<Record<string, number>>({});
 
   async function load() {
     setIsLoading(true);
@@ -75,6 +93,16 @@ export default function SupplyPage() {
     try {
       const result = await apiClient.get<Supply>(`/api/v1/supplies/${params.id}`);
       setSupply(result);
+      // The originally REQUESTED quantity (as opposed to what the warehouse actually
+      // dispatched) only lives on the originating supply request - fetched here, by item,
+      // so the receipt-confirmation view can show requested vs dispatched vs received
+      // together instead of silently collapsing "requested" into "dispatched".
+      if (result.supplyRequestId) {
+        apiClient
+          .get<{ lines: SupplyRequestLine[] }>(`/api/v1/supply-requests/${result.supplyRequestId}`)
+          .then((page) => setRequestedQuantities(Object.fromEntries(page.lines.map((line) => [line.itemId, line.requestedQuantity]))))
+          .catch(() => setRequestedQuantities({}));
+      }
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.messageAr : 'تعذر تحميل التوريد');
     } finally {
@@ -201,6 +229,7 @@ export default function SupplyPage() {
               {supply.status === 'Dispatched' && canConfirm ? <TableHead>الكمية المستلمة</TableHead> : null}
               {supply.status !== 'Prepared' ? <TableHead>المستلم</TableHead> : null}
               <TableHead>المشحون</TableHead>
+              {supply.supplyRequestId ? <TableHead>المطلوب أصلاً</TableHead> : null}
               <TableHead>الوحدة</TableHead>
               <TableHead>الصنف</TableHead>
             </TableRow>
@@ -225,6 +254,11 @@ export default function SupplyPage() {
                 ) : null}
                 {supply.status !== 'Prepared' ? <TableCell>{line.receivedQuantity ?? '—'}</TableCell> : null}
                 <TableCell>{formatQuantity(line.dispatchedQuantity, unitName(line.unitId))}</TableCell>
+                {supply.supplyRequestId ? (
+                  <TableCell>
+                    {requestedQuantities[line.itemId] !== undefined ? formatQuantity(requestedQuantities[line.itemId]!, unitName(line.unitId)) : '—'}
+                  </TableCell>
+                ) : null}
                 <TableCell>{unitName(line.unitId)}</TableCell>
                 <TableCell>{itemName(line.itemId)}</TableCell>
               </TableRow>
@@ -258,8 +292,10 @@ export default function SupplyPage() {
         <DialogContent>
           <div className="flex flex-col gap-4">
             <DialogHeader>
-              <DialogTitle>تأكيد استلام التوريد</DialogTitle>
-              <DialogDescription>راجع الفروقات قبل التأكيد - هذا الإجراء لا يمكن التراجع عنه.</DialogDescription>
+              <DialogTitle>تأكيد استلام التوريد بالفرع</DialogTitle>
+              <DialogDescription>
+                راجع الكميات المستلمة فعلياً بالفرع مقابل الكميات المشحونة من المخزن قبل التأكيد - هذا الإجراء لا يمكن التراجع عنه.
+              </DialogDescription>
             </DialogHeader>
 
             {confirmError ? <ErrorBanner message={confirmError} /> : null}
