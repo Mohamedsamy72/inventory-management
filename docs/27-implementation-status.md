@@ -1153,3 +1153,22 @@ Frontend: `src/app/(app)/users/page.tsx` (list + create dialog) and `src/app/(ap
 | The remainder of the broader plan-to-code traceability matrix (full endpoint-by-endpoint, entity-by-entity sweep) | This sweep closed the two highest-value gaps found so far (a broken role-dashboard render and a fully-missing admin surface with a real session-hygiene defect); the wider sweep continues in the next work session rather than being declared complete here. |
 
 Full solution suite (backend): 220/220 passing. Frontend: clean typecheck/lint/build, both new routes verified live end-to-end as Owner including the security-critical deactivation session-kill behavior.
+
+### 31.5 Gap 3 & 4 — `/consumption` and `/stock-counts` had the exact same shape of gap
+
+Continuing the sweep past §31.2, `nav-items.ts` was checked against every registered backend route group. Two more `nav-items.ts` entries pointed at routes that never existed, both with a fully complete backend and zero frontend code:
+
+- **`/stock-counts`** (Owner/Admin): the entire Phase 13 physical-count workflow (`create` → `record` → `submit` → `approve`/`reject`) already existed and was already integration-tested, including the blind-count leak-prevention design (`SystemQuantity`/`Variance` withheld from the wire while `InProgress`). No UI existed to reach any of it.
+- **`/consumption`** (Owner): REQ-07's consumption log (`POST`/`GET /api/v1/consumption`) existed with the same gap.
+
+Both were built following the exact same established screen patterns as every other Phase F module (list + create dialog for consumption; list + create dialog + a detail/record/submit/approve page for stock counts, mirroring `receiving/[id]`'s draft-editor shape). No backend changes were needed - both endpoint surfaces were already complete and correct.
+
+**Verified live** against the Development backend as Owner via direct authenticated HTTP calls: recorded a consumption entry and confirmed it listed back correctly; ran a full stock count against a warehouse with real stock (`مخزن بن بلال`, item balance 15) - created the count, recorded a physical quantity of 13, submitted for approval, approved it, and confirmed three things simultaneously: (1) the approval posted a real `PHYSICAL_ADJUSTMENT` and the warehouse balance actually moved to 13, (2) the item's `averageUnitCost` (WAC) was unchanged by the adjustment per ADR-020, and (3) a `StockCountVariance` discrepancy record was created automatically and now appears in `/discrepancies`. This is the same numeric-correctness verification standard applied to every prior phase's stock-affecting operation (§28, §29), not just a UI smoke test.
+
+Typecheck/lint/build all clean; 4 new routes registered (`/consumption`, `/stock-counts`, `/stock-counts/[id]` — `/users`/`/users/[id]` from §31.2 already counted). Committed `a759f41`.
+
+### 31.6 A known, deliberately-unclosed gap: `/settings`
+
+`nav-items.ts` also links Owner ("إعدادات المنشأة") and Admin ("الإعدادات التشغيلية") to `/settings`, which also has no frontend page — but unlike the three gaps above, there is **no backend surface to wire it to either**: no `/api/v1/companies` or `/api/v1/settings` endpoint exists anywhere in `src/Inventory.Api/Features/`. `company_settings` exists only as a migrated table consumed internally for tenant-timezone period derivation (§9, task 5.2) — docs/09 never scheduled a CRUD task for it. This is recorded here rather than silently left as an unexplained dead nav link: it is **not** the same class of gap as §31.2/§31.5 (backend-complete, frontend-missing) — it is genuinely unscoped in both layers, and building a settings page/endpoint now would be exactly the kind of speculative, plan-unauthorized feature this document's own discipline section forbids. Left as an open item for an explicit product/plan decision, not silently fixed.
+
+Full solution suite (backend): 220/220 passing, unchanged by §31.5 (no backend edits). Frontend: clean typecheck/lint/build, both new modules verified live end-to-end as Owner with real stock-affecting numeric verification.
