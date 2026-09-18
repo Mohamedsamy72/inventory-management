@@ -7,7 +7,6 @@ import {
   Inbox,
   ClipboardList,
   Send,
-  ClipboardCheck,
   TriangleAlert,
   UtensilsCrossed,
   ShieldCheck,
@@ -39,10 +38,10 @@ export function getNavItemsForRole(role: RoleName | null): AppShellNavItem[] {
         { href: '/receiving', label: 'الداخل الى المخزن', icon: Inbox },
         { href: '/supply-requests', label: 'طلبات البضاعه', icon: ClipboardList },
         { href: '/supplies', label: 'الصادر الى المطعم', icon: Send },
-        { href: '/stock-counts', label: 'الجرد الفعلي', icon: ClipboardCheck },
+        // '/stock-counts' temporarily hidden from the nav on request - route untouched.
         { href: '/discrepancies', label: 'سجل الفروقات', icon: TriangleAlert },
         { href: '/consumption', label: 'سجلات الاستهلاك', icon: UtensilsCrossed },
-        { href: '/audit', label: 'سجل التدقيق', icon: ShieldCheck },
+        { href: '/audit', label: 'الحركات', icon: ShieldCheck },
         { href: '/users', label: 'ادارة المستخدمين', icon: Users },
         { href: '/settings', label: 'إعدادات المنشأة', icon: Settings },
       ];
@@ -56,7 +55,7 @@ export function getNavItemsForRole(role: RoleName | null): AppShellNavItem[] {
         { href: '/receiving', label: 'الداخل الى المخزن', icon: Inbox },
         { href: '/supply-requests', label: 'طلبات البضاعه', icon: ClipboardList },
         { href: '/supplies', label: 'الصادر الى المطعم', icon: Send },
-        { href: '/stock-counts', label: 'الجرد الفعلي', icon: ClipboardCheck },
+        // '/stock-counts' temporarily hidden from the nav on request - route untouched.
         { href: '/discrepancies', label: 'سجل الفروقات', icon: TriangleAlert },
         { href: '/users', label: 'ادارة المستخدمين', icon: Users },
         { href: '/settings', label: 'الإعدادات التشغيلية', icon: Settings },
