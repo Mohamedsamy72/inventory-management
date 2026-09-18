@@ -278,6 +278,94 @@ public sealed class UserManagementService : IUserManagementService
         return UserManagementResult.Success<IReadOnlyList<string>>(appliedCodes);
     }
 
+    public async Task<UserManagementResult<UserScope>> GetScopeAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        User? user = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        if (user is null)
+        {
+            return UserManagementResult.Failure<UserScope>(UserManagementError.NotFound);
+        }
+
+        List<Guid> warehouseIds = await _context.UserWarehouseScopes
+            .Where(s => s.UserId == userId).Select(s => s.WarehouseId).ToListAsync(cancellationToken);
+        List<Guid> restaurantIds = await _context.UserRestaurantScopes
+            .Where(s => s.UserId == userId).Select(s => s.RestaurantId).ToListAsync(cancellationToken);
+
+        return UserManagementResult.Success(new UserScope(warehouseIds, restaurantIds));
+    }
+
+    public async Task<UserManagementResult<UserSummary>> DeactivateAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        if (userId == _currentUserService.UserId)
+        {
+            // Task 4.8: no self deactivation - an actor must never be able to lock themselves out.
+            return UserManagementResult.Failure<UserSummary>(UserManagementError.PrivilegeEscalation);
+        }
+
+        User? user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        if (user is null)
+        {
+            return UserManagementResult.Failure<UserSummary>(UserManagementError.NotFound);
+        }
+
+        user.Deactivate();
+
+        _auditLogger.Record(new AuditEntry(
+            "USER_DEACTIVATED",
+            nameof(User),
+            userId,
+            $"تم تعطيل حساب المستخدم {user.FullName}",
+            OldValues: new { IsActive = true },
+            NewValues: new { IsActive = false },
+            AuditResult.Success));
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        // Rotating the security stamp AFTER the deactivation + audit row are committed is
+        // deliberate: OnValidatePrincipal (docs/09 task 3.6) only ever compares stamps - without
+        // this, a user already logged in when deactivated would keep their existing session
+        // valid for up to 8 hours (the cookie's own expiry) despite IsActive being false, since
+        // nothing else in the per-request pipeline re-checks IsActive. UserManager.
+        // UpdateSecurityStampAsync saves eagerly via UserStore.UpdateAsync (the same Identity
+        // quirk CreateUserAsync's own transaction already works around), so it runs as its own
+        // step, after the primary change is safely committed.
+        await _userManager.UpdateSecurityStampAsync(user);
+
+        RoleName? role = await RoleOfAsync(userId, cancellationToken);
+        return UserManagementResult.Success(new UserSummary(user.Id, user.FullName, user.MobileNumber, role, user.IsActive));
+    }
+
+    public async Task<UserManagementResult<UserSummary>> ReactivateAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        User? user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        if (user is null)
+        {
+            return UserManagementResult.Failure<UserSummary>(UserManagementError.NotFound);
+        }
+
+        user.Reactivate();
+
+        _auditLogger.Record(new AuditEntry(
+            "USER_REACTIVATED",
+            nameof(User),
+            userId,
+            $"تم إعادة تفعيل حساب المستخدم {user.FullName}",
+            OldValues: new { IsActive = false },
+            NewValues: new { IsActive = true },
+            AuditResult.Success));
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        RoleName? role = await RoleOfAsync(userId, cancellationToken);
+        return UserManagementResult.Success(new UserSummary(user.Id, user.FullName, user.MobileNumber, role, user.IsActive));
+    }
+
+    public async Task<IReadOnlyList<PermissionCatalogueItem>> ListPermissionCatalogueAsync(CancellationToken cancellationToken) =>
+        await _context.Permissions.AsNoTracking()
+            .OrderBy(p => p.Module).ThenBy(p => p.Code)
+            .Select(p => new PermissionCatalogueItem(p.Code, p.Description, p.Module, p.IsGrantable))
+            .ToListAsync(cancellationToken);
+
     private async Task<RoleName?> RoleOfAsync(Guid userId, CancellationToken cancellationToken) =>
         await _context.UserRoles
             .Where(ur => ur.UserId == userId)

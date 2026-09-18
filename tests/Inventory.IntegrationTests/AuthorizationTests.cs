@@ -411,4 +411,106 @@ public sealed class AuthorizationTests : IClassFixture<WebApplicationFactory<Pro
             Assert.Null(projection.Apply(123.45m));
         }
     }
+
+    [Fact]
+    public async Task Owner_Cannot_Deactivate_Their_Own_Account()
+    {
+        (Company _, User owner, string password) = await SeedCompanyWithOwnerAsync();
+        using HttpClient client = await AuthTestHelpers.LoginAsAsync(_factory, owner, password);
+
+        using HttpResponseMessage response = await AuthTestHelpers.PostJsonAsync(client, $"/api/v1/users/{owner.Id}/deactivate", new { });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    /// <summary>The real bug this test guards against: deactivating a user must not merely block
+    /// their NEXT login - it must invalidate a session that is already live right now, via the
+    /// same security-stamp rotation `OnValidatePrincipal` already checks on every request
+    /// (docs/09 task 3.6). Before this was wired up, a deactivated user's existing cookie stayed
+    /// valid for up to 8 hours regardless.</summary>
+    [Fact]
+    public async Task Deactivating_A_User_Immediately_Invalidates_Their_Already_Active_Session()
+    {
+        (Company company, User owner, string ownerPassword) = await SeedCompanyWithOwnerAsync();
+        (User target, string targetPassword) = await AuthTestHelpers.CreateUserInCompanyAsync(_factory, company.Id);
+        await AuthTestHelpers.AssignRoleAsync(_factory, target.Id, RoleName.WarehouseStaff);
+
+        using HttpClient targetClient = await AuthTestHelpers.LoginAsAsync(_factory, target, targetPassword);
+        using HttpResponseMessage beforeDeactivation = await targetClient.GetAsync("/api/v1/account/me");
+        Assert.Equal(HttpStatusCode.OK, beforeDeactivation.StatusCode);
+
+        using HttpClient ownerClient = await AuthTestHelpers.LoginAsAsync(_factory, owner, ownerPassword);
+        using HttpResponseMessage deactivateResponse = await AuthTestHelpers.PostJsonAsync(ownerClient, $"/api/v1/users/{target.Id}/deactivate", new { });
+        Assert.Equal(HttpStatusCode.OK, deactivateResponse.StatusCode);
+
+        // Same cookie jar as before deactivation - no new login - proving the EXISTING session
+        // is rejected, not merely that a future login would fail.
+        using HttpResponseMessage afterDeactivation = await targetClient.GetAsync("/api/v1/account/me");
+        Assert.Equal(HttpStatusCode.Unauthorized, afterDeactivation.StatusCode);
+    }
+
+    [Fact]
+    public async Task Reactivating_A_User_Allows_Login_Again()
+    {
+        (Company company, User owner, string ownerPassword) = await SeedCompanyWithOwnerAsync();
+        (User target, string targetPassword) = await AuthTestHelpers.CreateUserInCompanyAsync(_factory, company.Id);
+        await AuthTestHelpers.AssignRoleAsync(_factory, target.Id, RoleName.WarehouseStaff);
+
+        using HttpClient ownerClient = await AuthTestHelpers.LoginAsAsync(_factory, owner, ownerPassword);
+        await AuthTestHelpers.PostJsonAsync(ownerClient, $"/api/v1/users/{target.Id}/deactivate", new { });
+
+        using HttpClient blockedClient = AuthTestHelpers.CreateClientWithCookies(_factory);
+        using HttpResponseMessage blockedLogin = await AuthTestHelpers.PostJsonAsync(
+            blockedClient, "/api/v1/auth/login", new { mobileNumber = target.MobileNumber, password = targetPassword });
+        Assert.Equal(HttpStatusCode.Forbidden, blockedLogin.StatusCode);
+
+        using HttpResponseMessage reactivateResponse = await AuthTestHelpers.PostJsonAsync(ownerClient, $"/api/v1/users/{target.Id}/reactivate", new { });
+        Assert.Equal(HttpStatusCode.OK, reactivateResponse.StatusCode);
+
+        using HttpClient allowedClient = AuthTestHelpers.CreateClientWithCookies(_factory);
+        using HttpResponseMessage allowedLogin = await AuthTestHelpers.PostJsonAsync(
+            allowedClient, "/api/v1/auth/login", new { mobileNumber = target.MobileNumber, password = targetPassword });
+        Assert.Equal(HttpStatusCode.OK, allowedLogin.StatusCode);
+    }
+
+    [Fact]
+    public async Task Getting_A_Users_Scope_Returns_Their_Current_Assignment()
+    {
+        (Company company, User owner, string ownerPassword) = await SeedCompanyWithOwnerAsync();
+        (User target, _) = await AuthTestHelpers.CreateUserInCompanyAsync(_factory, company.Id);
+
+        using IServiceScope scope = _factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        var warehouse = new Warehouse(company.Id, "مخزن الاختبار", "WH-" + Guid.NewGuid().ToString("N")[..6], null, null);
+        context.Warehouses.Add(warehouse);
+        await context.SaveChangesAsync();
+
+        using HttpClient ownerClient = await AuthTestHelpers.LoginAsAsync(_factory, owner, ownerPassword);
+        await AuthTestHelpers.SendJsonAsync(
+            ownerClient, HttpMethod.Put, $"/api/v1/users/{target.Id}/scope",
+            new { warehouseIds = new[] { warehouse.Id }, restaurantIds = Array.Empty<Guid>() });
+
+        using HttpResponseMessage response = await ownerClient.GetAsync($"/api/v1/users/{target.Id}/scope");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<UserScopeDto>();
+        Assert.Contains(warehouse.Id, body!.WarehouseIds);
+        Assert.Empty(body.RestaurantIds);
+    }
+
+    [Fact]
+    public async Task Permission_Catalogue_Lists_Real_Codes_Including_Non_Grantable_Ones()
+    {
+        (Company _, User owner, string password) = await SeedCompanyWithOwnerAsync();
+        using HttpClient client = await AuthTestHelpers.LoginAsAsync(_factory, owner, password);
+
+        using HttpResponseMessage response = await client.GetAsync("/api/v1/permissions");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var catalogue = await response.Content.ReadFromJsonAsync<List<PermissionCatalogueDto>>();
+        Assert.Contains(catalogue!, p => p.Code == "items:view" && p.IsGrantable);
+        Assert.Contains(catalogue!, p => p.Code == "audit:view" && !p.IsGrantable);
+    }
+
+    private sealed record UserScopeDto(List<Guid> WarehouseIds, List<Guid> RestaurantIds);
+    private sealed record PermissionCatalogueDto(string Code, string Description, string Module, bool IsGrantable);
 }

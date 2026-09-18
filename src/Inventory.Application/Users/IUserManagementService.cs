@@ -31,4 +31,19 @@ public interface IUserManagementService
     /// set.</summary>
     Task<UserManagementResult<IReadOnlyList<string>>> SetPermissionsAsync(
         Guid userId, IReadOnlyList<PermissionGrant> grants, CancellationToken cancellationToken);
+
+    /// <summary>The user's current explicit warehouse/restaurant scope - needed to populate a
+    /// scope-editing form with what is actually assigned today, not a blank slate.</summary>
+    Task<UserManagementResult<UserScope>> GetScopeAsync(Guid userId, CancellationToken cancellationToken);
+
+    /// <summary>Account-state control (never a hard delete, matching every other entity in this
+    /// codebase). Mirrors task 4.8's self-modification guard: the caller may not deactivate
+    /// their own account.</summary>
+    Task<UserManagementResult<UserSummary>> DeactivateAsync(Guid userId, CancellationToken cancellationToken);
+
+    Task<UserManagementResult<UserSummary>> ReactivateAsync(Guid userId, CancellationToken cancellationToken);
+
+    /// <summary>The full global permission catalogue, for a permission-editing UI to render real
+    /// codes/descriptions/grantability rather than a client-side hardcoded duplicate.</summary>
+    Task<IReadOnlyList<PermissionCatalogueItem>> ListPermissionCatalogueAsync(CancellationToken cancellationToken);
 }

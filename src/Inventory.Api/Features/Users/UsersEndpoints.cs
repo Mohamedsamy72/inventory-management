@@ -25,8 +25,15 @@ public static class UsersEndpoints
         users.MapGet("/", ListUsersAsync).RequireAuthorization("users:view");
         users.MapGet("/{id:guid}", GetUserAsync).RequireAuthorization("users:view");
         users.MapPut("/{id:guid}/role", ChangeRoleAsync).RequireAuthorization("users:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        users.MapGet("/{id:guid}/scope", GetScopeAsync).RequireAuthorization("users:scope");
         users.MapPut("/{id:guid}/scope", SetScopeAsync).RequireAuthorization("users:scope").AddEndpointFilter<AntiforgeryEndpointFilter>();
         users.MapPut("/{id:guid}/permissions", SetPermissionsAsync).RequireAuthorization("users:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        users.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("users:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        users.MapPost("/{id:guid}/reactivate", ReactivateAsync).RequireAuthorization("users:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+
+        // Not nested under /users/{id} - this is the global catalogue every permission-editing
+        // form needs regardless of which user is being edited.
+        app.MapGet("/api/v1/permissions", ListPermissionCatalogueAsync).RequireAuthorization("users:manage");
 
         return app;
     }
@@ -61,6 +68,12 @@ public static class UsersEndpoints
         return result.Succeeded ? Results.Ok(result.Value) : await WriteErrorAsync(httpContext, result.Error);
     }
 
+    private static async Task<IResult> GetScopeAsync(Guid id, HttpContext httpContext, IUserManagementService service)
+    {
+        UserManagementResult<UserScope> result = await service.GetScopeAsync(id, httpContext.RequestAborted);
+        return result.Succeeded ? Results.Ok(result.Value) : await WriteErrorAsync(httpContext, result.Error);
+    }
+
     private static async Task<IResult> SetScopeAsync(
         Guid id, SetUserScopeRequest request, HttpContext httpContext, IUserManagementService service)
     {
@@ -68,6 +81,21 @@ public static class UsersEndpoints
         UserManagementResult<UserScope> result = await service.SetScopeAsync(id, scope, httpContext.RequestAborted);
         return result.Succeeded ? Results.Ok(result.Value) : await WriteErrorAsync(httpContext, result.Error);
     }
+
+    private static async Task<IResult> DeactivateAsync(Guid id, HttpContext httpContext, IUserManagementService service)
+    {
+        UserManagementResult<UserSummary> result = await service.DeactivateAsync(id, httpContext.RequestAborted);
+        return result.Succeeded ? Results.Ok(result.Value) : await WriteErrorAsync(httpContext, result.Error);
+    }
+
+    private static async Task<IResult> ReactivateAsync(Guid id, HttpContext httpContext, IUserManagementService service)
+    {
+        UserManagementResult<UserSummary> result = await service.ReactivateAsync(id, httpContext.RequestAborted);
+        return result.Succeeded ? Results.Ok(result.Value) : await WriteErrorAsync(httpContext, result.Error);
+    }
+
+    private static async Task<IResult> ListPermissionCatalogueAsync(HttpContext httpContext, IUserManagementService service) =>
+        Results.Ok(await service.ListPermissionCatalogueAsync(httpContext.RequestAborted));
 
     private static async Task<IResult> SetPermissionsAsync(
         Guid id, SetUserPermissionsRequest request, HttpContext httpContext, IUserManagementService service)

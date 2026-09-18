@@ -10,6 +10,11 @@ public sealed record UserScope(IReadOnlyList<Guid> WarehouseIds, IReadOnlyList<G
 
 public sealed record PermissionGrant(string Code, bool IsGranted);
 
+/// <summary>One row of the global permission catalogue (docs/03 §3) - lets the user-management
+/// UI render every real permission's Arabic description and grantability instead of a caller
+/// having to hardcode the catalogue a second time.</summary>
+public sealed record PermissionCatalogueItem(string Code, string Description, string Module, bool IsGrantable);
+
 /// <summary>Why a task 4.14 user-management operation did not succeed. Each maps to exactly one
 /// documented error code at the endpoint layer - kept here, not as raw HTTP status codes, so the
 /// service stays free of any ASP.NET Core dependency (ADR-002).</summary>
