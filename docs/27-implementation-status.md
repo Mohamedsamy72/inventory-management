@@ -2,7 +2,7 @@
 
 > **Document ID:** SPEC-27
 > **Status:** Live Implementation Register
-> **Current State:** **Backend Phases P0–P14, S1 (backend), and T1 (backend) are all CLOSED**, and **frontend Phases F1 through F6 are all CLOSED (F6 signed off 2026-09-18)** - every frontend phase in docs/09 is now complete. Full backend suite: 215/215 passing (27 unit, 19 architecture, 169 integration), stable across repeated consecutive runs. Frontend: 33/33 unit tests, all permanent E2E specs green, clean typecheck/lint/production build, verified against a live Development backend with real cross-role (Owner/Admin/Warehouse Staff/Restaurant Supervisor) manual E2E walkthroughs. Checkpoints 2 through 6 are all reached. See §25–§30 for the F1–F6 verification ledgers, and §16–§24 for the backend phase ledgers. **Phase S1 (frontend half), T1 (frontend half), and T2 (Browser E2E & Acceptance) are next**, followed by R1 (release readiness).
+> **Current State:** **Backend Phases P0–P14, S1 (backend), and T1 (backend) are all CLOSED**, and **frontend Phases F1 through F6 are all CLOSED (F6 signed off 2026-09-18)** - every frontend phase in docs/09 is now complete. Full backend suite: 220/220 passing, stable across repeated consecutive runs. Frontend: clean typecheck/lint/production build, verified against a live Development backend with real cross-role (Owner/Admin/Warehouse Staff/Restaurant Supervisor) manual E2E walkthroughs. Checkpoints 2 through 6 are all reached. See §25–§30 for the F1–F6 verification ledgers, §16–§24 for the backend phase ledgers, and §31 for a post-F6 reconciliation sweep that found and closed two real, previously-undetected end-to-end gaps despite every phase above being individually signed off. **Phase S1 (frontend half), T1 (frontend half), and T2 (Browser E2E & Acceptance) are next**, followed by R1 (release readiness).
 >
 > **Environment note for the next session:** this repo's PostgreSQL 16 instance (`C:\pg-inventory-system\`, port 5433) is portable binaries, not a registered Windows service — it does not survive a machine/session restart on its own. If `dotnet test`'s integration suite fails with "Failed to connect to 127.0.0.1:5433 ... actively refused", start it first: `C:\pg-inventory-system\pgsql\bin\pg_ctl.exe start -D C:\pg-inventory-system\data -l C:\pg-inventory-system\logfile.log -o "-p 5433" -w` (docs/19 §1, docs/33 §4.3).
 > **Plan Authority:** `docs/09-implementation-plan.md` (supersedes `docs/22-implementation-plan.md`).
@@ -1110,3 +1110,46 @@ Fixed by branching the render itself: when `asChild`, render only `children` (sa
 | A repository-wide automated scan proving zero hardcoded `0`/mock array/placeholder chart (docs/09's own stated F6 acceptance criterion) | Verified by direct code review of every widget in this phase (each renders `filtered.length` from a live fetch, never a literal number) rather than a scripted repository grep; no such scan script exists in this session's tooling. |
 
 Full solution suite (backend): 215/215 passing, unchanged by this phase. Frontend: 33/33 unit tests, clean typecheck/lint/build, full manual cross-role dashboard verification against a live backend, plus a genuine Phase-F1-era bug found and fixed.
+
+---
+
+## 31. Post-F6 Reconciliation Sweep — Findings & Fixes
+
+With every individual phase in §2 signed off, a full plan-to-code-to-DB-to-frontend reconciliation sweep was run rather than assuming completeness. It found and closed two real, previously-undetected gaps that no single phase's own verification had caught, because each phase verified its own slice in isolation rather than the cross-phase seam between them.
+
+### 31.1 Gap 1 — `/dashboard` had no branch for the `User` (general) role
+
+`docs/03 §1.5` and the F6 dashboard work (§30) specify widget sets for Owner/Admin/Warehouse Staff/Restaurant Supervisor, but a user with role `User` (the unprivileged default role created without a role assignment) fell through to the Owner/Admin branch, which calls tenant-wide list endpoints that role holds no permission for - silently rendering broken/error widgets instead of a coherent screen. Fixed by adding an explicit `User`/`null`-role branch (`src/app/(app)/dashboard/page.tsx`) that renders a neutral welcome message pointing the user at the sidebar instead of attempting any privileged fetch. Committed `312ad1b`.
+
+### 31.2 Gap 2 — `/users` had a fully-built backend and zero frontend screen
+
+`nav-items.ts` has linked Owner/Admin to `/users` since Phase F2, and Phase 4 (task 4.14) built the complete backend CRUD (`POST/GET /api/v1/users`, `GET/PUT .../role`) - but the route itself 404'd; no page ever existed. This is the same "real need, no route" failure shape as the F5 `/names` gap (§29), just on the admin side instead of the operational side. While closing it, two further backend gaps in the same surface were found:
+
+- **No way to view or set a user's warehouse/restaurant scope.** `IScopeGuard` has consumed `UserScope` since Phase 4, but nothing ever exposed it for editing after initial creation. Added `GET`/`PUT /api/v1/users/{id}/scope`, gated by the existing `users:scope` policy.
+- **No way to deactivate a user, and deactivation alone does not kill a live session.** `User.Deactivate()`/`Reactivate()` domain methods existed since Phase 2/3 (consumed only by login's `ACCOUNT_INACTIVE` check) but had no endpoint. Worse: `OnValidatePrincipal` (the per-request cookie validator) only checks `SignInManager.ValidateSecurityStampAsync` - it does **not** independently re-check `IsActive` - so a plain `IsActive = false` write would have left an already-signed-in session valid until its cookie naturally expired, which is a genuine session-hygiene gap the directive's security-priority ordering (Authorization > Auditability) requires closing. Fixed by adding `POST /api/v1/users/{id}/deactivate`/`reactivate` (`users:manage`), where deactivate does `user.Deactivate()` → `SaveChangesAsync()` → `UserManager.UpdateSecurityStampAsync(user)` in that order, which rotates the stamp `OnValidatePrincipal` checks on the very next request from any existing session for that account.
+- **No permission catalogue endpoint.** The permissions-editing UI needs the full list of grantable permission codes with Arabic descriptions; added `GET /api/v1/permissions` (`users:manage`), sourced from the existing `Permission` seed data via a new `IUserManagementService.ListPermissionCatalogueAsync`, correctly marking the four Owner-reserved codes (`costs:view`, `valuation:view`, `audit:view`, `audit:export`) as `isGrantable: false`.
+
+Backend: `src/Inventory.Application/Users/IUserManagementService.cs`, `UserManagementModels.cs`; `src/Inventory.Infrastructure/Users/UserManagementService.cs`; `src/Inventory.Api/Features/Users/UsersEndpoints.cs`; 6 new tests in `tests/Inventory.IntegrationTests/AuthorizationTests.cs`, including one that logs a target user in, deactivates them from a **separate** authenticated session, and re-uses the target's original (unrefreshed) cookie to assert `/api/v1/account/me` now returns `401`. Committed `456ae04`.
+
+Frontend: `src/app/(app)/users/page.tsx` (list + create dialog) and `src/app/(app)/users/[id]/page.tsx` (role change, scope assignment via the existing `/warehouses/names` and `/restaurants/names` endpoints from §29, a permissions checklist built from the new catalogue endpoint, deactivate/reactivate) - both gated on `users:view`/`users:manage`/`users:scope` exactly as the backend enforces, and both disable self-targeting mutations (a user cannot change their own role/scope/active state) client-side as a UX courtesy on top of the server's own privilege-escalation guard. Committed `35e6565`.
+
+### 31.3 Verified — executed, output observed
+
+| Check | Command / Method | Result |
+| :--- | :--- | :---: |
+| Backend build | `dotnet build` | ✅ 0 warnings, 0 errors |
+| Backend full suite | `dotnet test` | ✅ 220/220 |
+| Frontend type checking | `npm run typecheck` | ✅ clean |
+| Frontend linting | `npm run lint` | ✅ clean |
+| Frontend production build | `npm run build` | ✅ succeeds; `/users` and `/users/[id]` now present as real routes (19 routes total, up from 17) |
+| Live end-to-end verification against the Development backend, as Owner, via direct authenticated HTTP calls (CSRF token → cookie session) | Manual `curl` walkthrough: list users, fetch permission catalogue, create a `WarehouseStaff` test user, `GET`/`PUT` its scope, `PUT` its permissions, log that user in on a **separate** session, deactivate from the Owner session, confirm the still-open second session's `/api/v1/account/me` now returns `401` with the session cookie cleared, reactivate | ✅ every step succeeded exactly as designed; the session-kill-on-deactivation behavior was reproduced live, not just in the integration test |
+
+### 31.4 Not verified — genuinely out of this sweep's scope
+
+| Item | Why deferred |
+| :--- | :--- |
+| A permanent, committed E2E spec for the Users screens | Same recurring gap as §26.5/§27.4/§28.3/§29.5/§30.4 - proper seeded multi-role E2E fixtures belong in Phase T2, not ad hoc per-fix scripts. |
+| Change-password-via-OTP and mobile-number-change self-service flows | Referenced by an out-of-band directive but absent from `docs/09`'s task list; per this document's own stated resolution order (docs/09 is authoritative for scope), left out of this sweep pending an explicit product decision to add them to the plan. |
+| The remainder of the broader plan-to-code traceability matrix (full endpoint-by-endpoint, entity-by-entity sweep) | This sweep closed the two highest-value gaps found so far (a broken role-dashboard render and a fully-missing admin surface with a real session-hygiene defect); the wider sweep continues in the next work session rather than being declared complete here. |
+
+Full solution suite (backend): 220/220 passing. Frontend: clean typecheck/lint/build, both new routes verified live end-to-end as Owner including the security-critical deactivation session-kill behavior.
