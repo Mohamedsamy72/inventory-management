@@ -6,6 +6,7 @@ import { useSession } from '@/lib/auth/session-context';
 import { Button } from '@/components/ui/button';
 import { LoadingSkeleton } from '@/components/feedback/loading-skeleton';
 import { DashboardWidget } from '@/components/features/dashboard-widget';
+import { WarehouseInventoryCards } from '@/components/features/warehouse-inventory-cards';
 
 interface ReceivingOrderSummary {
   id: string;
@@ -200,6 +201,16 @@ export default function DashboardPage() {
           viewAllHref="/discrepancies"
         />
       </div>
+
+      {profile.role === 'Owner' ? (
+        <div className="flex flex-col gap-3">
+          <div>
+            <h2 className="font-heading text-lg font-medium text-foreground">رصيد المخازن</h2>
+            <p className="text-sm text-muted-foreground">إجمالي الأصناف والقيمة لكل مخزن - اضغط على مخزن لعرض تفاصيل الأصناف والأسعار.</p>
+          </div>
+          <WarehouseInventoryCards />
+        </div>
+      ) : null}
     </div>
   );
 }
