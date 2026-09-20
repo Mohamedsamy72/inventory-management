@@ -15,10 +15,10 @@ public enum TransactionalError
     EmptyDocument,
     ConcurrencyConflict,
 
-    /// <summary>ADR-028/CR-092 - a restaurant's default serving warehouse is missing or
-    /// inactive. Maps to <c>409 SERVING_WAREHOUSE_UNAVAILABLE</c>; the server never falls back
-    /// to another warehouse.</summary>
-    ServingWarehouseUnavailable,
+    /// <summary>Change 1 - the warehouse named on a supply-request create/fulfil call does not
+    /// exist, is not `Active`, or does not belong to the caller's own company. Maps to
+    /// <c>409 WAREHOUSE_UNAVAILABLE</c>.</summary>
+    WarehouseUnavailable,
 
     /// <summary>Task 11.9 - a second, non-replayed confirmation of a supply already past
     /// `Dispatched`. Distinct from the generic <see cref="InvalidStateTransition"/> because

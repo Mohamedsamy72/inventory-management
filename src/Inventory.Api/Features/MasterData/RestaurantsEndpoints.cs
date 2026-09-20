@@ -4,9 +4,8 @@ using Inventory.Application.MasterData;
 
 namespace Inventory.Api.Features.MasterData;
 
-public sealed record CreateRestaurantRequest(string NameArabic, string Code, Guid DefaultServingWarehouseId, string? Address, string? Description);
+public sealed record CreateRestaurantRequest(string NameArabic, string Code, string? Address, string? Description);
 public sealed record UpdateRestaurantRequest(string NameArabic, string? Address, string? Description);
-public sealed record ChangeServingWarehouseRequest(Guid WarehouseId);
 public sealed record RestaurantNameOption(Guid Id, string NameArabic, string Code);
 
 /// <summary>Task 5.9.</summary>
@@ -24,7 +23,6 @@ public static class RestaurantsEndpoints
         restaurants.MapGet("/names", ListNamesAsync).RequireAuthorization();
         restaurants.MapGet("/{id:guid}", GetAsync).RequireAuthorization("restaurants:manage");
         restaurants.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("restaurants:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
-        restaurants.MapPut("/{id:guid}/serving-warehouse", ChangeServingWarehouseAsync).RequireAuthorization("restaurants:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         restaurants.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("restaurants:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         restaurants.MapPost("/{id:guid}/reactivate", ReactivateAsync).RequireAuthorization("restaurants:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
 
@@ -33,7 +31,7 @@ public static class RestaurantsEndpoints
 
     private static async Task<IResult> CreateAsync(CreateRestaurantRequest request, HttpContext httpContext, IRestaurantService service)
     {
-        var command = new CreateRestaurantCommand(request.NameArabic, request.Code, request.DefaultServingWarehouseId, request.Address, request.Description);
+        var command = new CreateRestaurantCommand(request.NameArabic, request.Code, request.Address, request.Description);
         var result = await service.CreateAsync(command, httpContext.RequestAborted);
         return result.Succeeded ? Results.Created($"/api/v1/restaurants/{result.Value!.Id}", result.Value) : await MasterDataErrorWriter.WriteErrorAsync(httpContext, result.Error);
     }
@@ -60,12 +58,6 @@ public static class RestaurantsEndpoints
     {
         var command = new UpdateRestaurantCommand(request.NameArabic, request.Address, request.Description);
         var result = await service.UpdateAsync(id, command, httpContext.RequestAborted);
-        return result.Succeeded ? Results.Ok(result.Value) : await MasterDataErrorWriter.WriteErrorAsync(httpContext, result.Error);
-    }
-
-    private static async Task<IResult> ChangeServingWarehouseAsync(Guid id, ChangeServingWarehouseRequest request, HttpContext httpContext, IRestaurantService service)
-    {
-        var result = await service.ChangeServingWarehouseAsync(id, request.WarehouseId, httpContext.RequestAborted);
         return result.Succeeded ? Results.Ok(result.Value) : await MasterDataErrorWriter.WriteErrorAsync(httpContext, result.Error);
     }
 

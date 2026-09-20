@@ -18,7 +18,6 @@ public enum MasterDataError
 
     GeneratedFieldNotAccepted,
     SequenceExhausted,
-    ServingWarehouseUnavailable,
     BaseUnitImmutable,
     ConversionNotDefined,
     InvalidConversionFactor,

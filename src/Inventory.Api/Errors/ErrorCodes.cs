@@ -26,7 +26,11 @@ internal static class ErrorCodes
     // Phase 5 (docs/28, docs/13 §2 pre-existing rows unless noted).
     public const string GeneratedFieldNotAccepted = "GENERATED_FIELD_NOT_ACCEPTED";
     public const string SequenceExhausted = "SEQUENCE_EXHAUSTED";
-    public const string ServingWarehouseUnavailable = "SERVING_WAREHOUSE_UNAVAILABLE";
+    /// <summary>Renamed from <c>SERVING_WAREHOUSE_UNAVAILABLE</c> when Change 1 reversed ADR-028:
+    /// the warehouse a supply request targets is now chosen explicitly per request rather than
+    /// derived from a restaurant's default, but it still must exist, be `Active`, and belong to
+    /// the caller's own company - this is what that validation returns.</summary>
+    public const string WarehouseUnavailable = "WAREHOUSE_UNAVAILABLE";
     public const string DuplicateItemName = "DUPLICATE_ITEM_NAME";
 
     /// <summary>New for Phase 5: docs/13's `DUPLICATE_ITEM_NAME` is item-specific by name and by
@@ -71,7 +75,7 @@ internal static class ErrorCodes
         InvalidPassword => "كلمة المرور لا تحقق متطلبات القوة المطلوبة.",
         GeneratedFieldNotAccepted => "لا يمكن إدخال أرقام المستندات يدوياً — يتم توليدها تلقائياً بواسطة النظام.",
         SequenceExhausted => "تم استنفاد نطاق ترقيم المستندات، يرجى مراجعة إدارة النظام.",
-        ServingWarehouseUnavailable => "لا يوجد مستودع خدمة مفعّل لهذا الفرع، يرجى مراجعة إدارة النظام.",
+        WarehouseUnavailable => "المخزن المحدد غير موجود أو غير مفعّل.",
         DuplicateItemName => "يوجد صنف مسجل مسبقاً بنفس الاسم العربي في المنشأة.",
         DuplicateName => "يوجد سجل مسجل مسبقاً بنفس الاسم أو الرمز في المنشأة.",
         BaseUnitImmutable => "لا يمكن تغيير وحدة القياس الأساسية بعد وجود حركات مخزنية لهذا الصنف.",
@@ -101,7 +105,7 @@ internal static class ErrorCodes
         InvalidPassword => "Password does not meet the required complexity.",
         GeneratedFieldNotAccepted => "Generated identifiers cannot be submitted.",
         SequenceExhausted => "Document numbering range exhausted.",
-        ServingWarehouseUnavailable => "The branch has no active serving warehouse.",
+        WarehouseUnavailable => "The selected warehouse does not exist or is not active.",
         DuplicateItemName => "An item with this Arabic name already exists.",
         DuplicateName => "A record with this name or code already exists.",
         BaseUnitImmutable => "The base unit cannot change once stock ledger entries exist for this item.",

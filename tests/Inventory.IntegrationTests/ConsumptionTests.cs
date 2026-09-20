@@ -44,7 +44,7 @@ public sealed class ConsumptionTests : IClassFixture<WebApplicationFactory<Progr
         var warehouse = await warehouseResponse.Content.ReadFromJsonAsync<IdDto>();
 
         using HttpResponseMessage restaurantResponse = await AuthTestHelpers.PostJsonAsync(
-            client, "/api/v1/restaurants", new { nameArabic = "فرع", code = "BR-" + Guid.NewGuid().ToString("N")[..6], defaultServingWarehouseId = warehouse!.Id, address = (string?)null, description = (string?)null });
+            client, "/api/v1/restaurants", new { nameArabic = "فرع", code = "BR-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
         var restaurant = await restaurantResponse.Content.ReadFromJsonAsync<IdDto>();
 
         using HttpResponseMessage categoryResponse = await AuthTestHelpers.PostJsonAsync(
@@ -60,7 +60,7 @@ public sealed class ConsumptionTests : IClassFixture<WebApplicationFactory<Progr
             new { nameArabic = "صنف " + Guid.NewGuid().ToString("N")[..6], categoryId = category!.Id, baseUnitId = unit!.Id, purchaseUnitId = (Guid?)null, defaultSupplierId = (Guid?)null, description = (string?)null });
         var item = await itemResponse.Content.ReadFromJsonAsync<ItemDto>();
 
-        var seed = new Seed(company.Id, client, restaurant!.Id, warehouse.Id, item!.Id, item.BaseUnitId);
+        var seed = new Seed(company.Id, client, restaurant!.Id, warehouse!.Id, item!.Id, item.BaseUnitId);
 
         if (openingBalance > 0)
         {
@@ -124,7 +124,7 @@ public sealed class ConsumptionTests : IClassFixture<WebApplicationFactory<Progr
         Seed seed = await SeedAsync();
 
         using HttpResponseMessage otherRestaurantResponse = await AuthTestHelpers.PostJsonAsync(
-            seed.OwnerClient, "/api/v1/restaurants", new { nameArabic = "فرع آخر", code = "BR-" + Guid.NewGuid().ToString("N")[..6], defaultServingWarehouseId = seed.WarehouseId, address = (string?)null, description = (string?)null });
+            seed.OwnerClient, "/api/v1/restaurants", new { nameArabic = "فرع آخر", code = "BR-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
         var otherRestaurant = await otherRestaurantResponse.Content.ReadFromJsonAsync<IdDto>();
 
         (User supervisorUser, string supervisorPassword) = await AuthTestHelpers.CreateUserInCompanyAsync(_factory, seed.CompanyId);

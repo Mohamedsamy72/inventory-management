@@ -6,6 +6,11 @@ namespace Inventory.Domain.Entities;
 /// <summary>
 /// A consumption node: supply requests, confirmed receipts, consumption logs, discrepancy
 /// records - and nothing else. A restaurant NEVER holds a stock balance (docs/02 section 1).
+///
+/// Product decision (Change 1) reversed the original ADR-028 model: a restaurant is no longer
+/// pinned to one permanent "serving warehouse" - it can receive from more than one. Which
+/// warehouse a given supply request targets is chosen (and validated) at the point that request
+/// is created, not carried as a restaurant-level property.
 /// </summary>
 public sealed class Restaurant : Entity, ITenantScopedEntity
 {
@@ -13,7 +18,7 @@ public sealed class Restaurant : Entity, ITenantScopedEntity
     {
     }
 
-    public Restaurant(Guid companyId, string nameArabic, string code, Guid defaultServingWarehouseId, string? address, string? description)
+    public Restaurant(Guid companyId, string nameArabic, string code, string? address, string? description)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(nameArabic);
         ArgumentException.ThrowIfNullOrWhiteSpace(code);
@@ -23,7 +28,6 @@ public sealed class Restaurant : Entity, ITenantScopedEntity
         NameArabic = nameArabic;
         Code = code;
         Status = RestaurantStatus.Active;
-        DefaultServingWarehouseId = defaultServingWarehouseId;
         Address = address;
         Description = description;
         CreatedAt = DateTimeOffset.UtcNow;
@@ -34,24 +38,10 @@ public sealed class Restaurant : Entity, ITenantScopedEntity
     public string NameArabic { get; private set; } = string.Empty;
     public string Code { get; private set; } = string.Empty;
     public RestaurantStatus Status { get; private set; }
-
-    /// <summary>
-    /// ADR-028: exactly one serving warehouse. Resolved server-side for every supply request at
-    /// the moment of creation - a later change here does NOT retroactively redirect requests
-    /// already created (SW-8).
-    /// </summary>
-    public Guid DefaultServingWarehouseId { get; private set; }
-
     public string? Address { get; private set; }
     public string? Description { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
-
-    public void ChangeServingWarehouse(Guid warehouseId)
-    {
-        DefaultServingWarehouseId = warehouseId;
-        UpdatedAt = DateTimeOffset.UtcNow;
-    }
 
     public void Update(string nameArabic, string? address, string? description)
     {

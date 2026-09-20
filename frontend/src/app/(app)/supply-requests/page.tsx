@@ -47,17 +47,24 @@ export default function SupplyRequestsPage() {
     useKeysetList<SupplyRequestSummary>('/api/v1/supply-requests');
 
   const [restaurants, setRestaurants] = useState<NamedOption[]>([]);
+  const [warehouses, setWarehouses] = useState<NamedOption[]>([]);
 
   useEffect(() => {
     // "/names" (docs/03 §"Warehouses & Branches" - ❌ for Restaurant Supervisor), not the
     // manage-gated list: this page's own "طلب جديد" dialog is exactly where a scoped
-    // Supervisor (who holds supply_requests:create but no restaurants:manage) needs to
-    // resolve their own restaurant's name.
+    // Supervisor (who holds supply_requests:create but no restaurants:manage/warehouses:manage)
+    // needs to resolve their own restaurant's name and pick a warehouse to request from.
     apiClient.get<NamedOption[]>('/api/v1/restaurants/names').then(setRestaurants).catch(() => setRestaurants([]));
+    // Change 1 (reversed ADR-028): a restaurant can receive from more than one warehouse, so a
+    // Restaurant Supervisor now chooses one explicitly per request - every active company
+    // warehouse is offered, since Restaurant Supervisor has no warehouse-scope concept at all
+    // (only Warehouse Staff does).
+    apiClient.get<NamedOption[]>('/api/v1/warehouses/names').then(setWarehouses).catch(() => setWarehouses([]));
   }, []);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [restaurantId, setRestaurantId] = useState('');
+  const [warehouseId, setWarehouseId] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -84,6 +91,7 @@ export default function SupplyRequestsPage() {
 
   function openCreate() {
     setRestaurantId('');
+    setWarehouseId('');
     setFormError(null);
     setDialogOpen(true);
   }
@@ -92,7 +100,7 @@ export default function SupplyRequestsPage() {
     setFormError(null);
     setIsSubmitting(true);
     try {
-      const created = await apiClient.post<{ id: string }>('/api/v1/supply-requests', { restaurantId });
+      const created = await apiClient.post<{ id: string }>('/api/v1/supply-requests', { restaurantId, warehouseId });
       setDialogOpen(false);
       router.push(`/supply-requests/${created.id}`);
     } catch (caught) {
@@ -172,9 +180,7 @@ export default function SupplyRequestsPage() {
           <div className="flex flex-col gap-4">
             <DialogHeader>
               <DialogTitle>طلب بضاعة جديد</DialogTitle>
-              <DialogDescription>
-                لا يوجد اختيار للمخزن - سيتم تحديد المخزن المغذي تلقائياً حسب إعدادات الفرع.
-              </DialogDescription>
+              <DialogDescription>اختر المخزن الذي تريد طلب البضاعة منه.</DialogDescription>
             </DialogHeader>
 
             {formError ? <ErrorBanner message={formError} /> : null}
@@ -194,8 +200,21 @@ export default function SupplyRequestsPage() {
               </Select>
             ) : null}
 
+            <Select value={warehouseId} onValueChange={(value) => value && setWarehouseId(value)} required>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="اختر المخزن" />
+              </SelectTrigger>
+              <SelectContent>
+                {warehouses.map((warehouse) => (
+                  <SelectItem key={warehouse.id} value={warehouse.id}>
+                    {warehouse.nameArabic}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             <DialogFooter>
-              <Button loading={isSubmitting} disabled={!restaurantId} onClick={handleCreate}>
+              <Button loading={isSubmitting} disabled={!restaurantId || !warehouseId} onClick={handleCreate}>
                 إنشاء
               </Button>
             </DialogFooter>

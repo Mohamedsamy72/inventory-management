@@ -26,25 +26,14 @@ public sealed class RestaurantService : IRestaurantService
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        // ADR-028 SW-6: the tenant query filter already confines this to the caller's own
-        // company, so a cross-tenant warehouse id is indistinguishable from a nonexistent one -
-        // both correctly fail closed here.
-        bool warehouseIsActive = await _context.Warehouses
-            .AnyAsync(w => w.Id == command.DefaultServingWarehouseId && w.Status == WarehouseStatus.Active, cancellationToken);
-
-        if (!warehouseIsActive)
-        {
-            return MasterDataResult.Failure<RestaurantSummary>(MasterDataError.ServingWarehouseUnavailable);
-        }
-
         var restaurant = new Restaurant(
-            _currentUserService.CompanyId, command.NameArabic, command.Code, command.DefaultServingWarehouseId, command.Address, command.Description);
+            _currentUserService.CompanyId, command.NameArabic, command.Code, command.Address, command.Description);
         _context.Restaurants.Add(restaurant);
 
         _auditLogger.Record(new AuditEntry(
             "RESTAURANT_CREATED", nameof(Restaurant), restaurant.Id,
             $"تم إنشاء فرع جديد: {restaurant.NameArabic} ({restaurant.Code})",
-            OldValues: null, NewValues: new { restaurant.NameArabic, restaurant.Code, restaurant.DefaultServingWarehouseId }, Domain.Enums.AuditResult.Success,
+            OldValues: null, NewValues: new { restaurant.NameArabic, restaurant.Code }, Domain.Enums.AuditResult.Success,
             RestaurantId: restaurant.Id));
 
         MasterDataError? conflict = await TrySaveAsync(cancellationToken);
@@ -102,34 +91,6 @@ public sealed class RestaurantService : IRestaurantService
             : MasterDataResult.Success(ToSummary(restaurant));
     }
 
-    public async Task<MasterDataResult<RestaurantSummary>> ChangeServingWarehouseAsync(Guid id, Guid warehouseId, CancellationToken cancellationToken)
-    {
-        Restaurant? restaurant = await _context.Restaurants.FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
-        if (restaurant is null)
-        {
-            return MasterDataResult.Failure<RestaurantSummary>(MasterDataError.NotFound);
-        }
-
-        bool warehouseIsActive = await _context.Warehouses
-            .AnyAsync(w => w.Id == warehouseId && w.Status == WarehouseStatus.Active, cancellationToken);
-        if (!warehouseIsActive)
-        {
-            return MasterDataResult.Failure<RestaurantSummary>(MasterDataError.ServingWarehouseUnavailable);
-        }
-
-        Guid oldWarehouseId = restaurant.DefaultServingWarehouseId;
-        restaurant.ChangeServingWarehouse(warehouseId);
-
-        _auditLogger.Record(new AuditEntry(
-            "RESTAURANT_SERVING_WAREHOUSE_CHANGED", nameof(Restaurant), restaurant.Id,
-            $"تم تغيير مستودع الخدمة للفرع: {restaurant.NameArabic}",
-            OldValues: new { WarehouseId = oldWarehouseId }, NewValues: new { WarehouseId = warehouseId }, Domain.Enums.AuditResult.Success,
-            RestaurantId: restaurant.Id));
-
-        await _context.SaveChangesAsync(cancellationToken);
-        return MasterDataResult.Success(ToSummary(restaurant));
-    }
-
     public Task<MasterDataResult<RestaurantSummary>> DeactivateAsync(Guid id, CancellationToken cancellationToken) =>
         SetActiveAsync(id, active: false, cancellationToken);
 
@@ -177,6 +138,6 @@ public sealed class RestaurantService : IRestaurantService
     }
 
     private static RestaurantSummary ToSummary(Restaurant restaurant) => new(
-        restaurant.Id, restaurant.NameArabic, restaurant.Code, restaurant.DefaultServingWarehouseId,
+        restaurant.Id, restaurant.NameArabic, restaurant.Code,
         restaurant.Status == RestaurantStatus.Active, restaurant.Address, restaurant.Description, restaurant.CreatedAt);
 }

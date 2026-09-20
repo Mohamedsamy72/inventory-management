@@ -20,7 +20,6 @@ internal static class MasterDataErrorWriter
             MasterDataError.DuplicateItemName => (StatusCodes.Status409Conflict, ErrorCodes.DuplicateItemName),
             MasterDataError.GeneratedFieldNotAccepted => (StatusCodes.Status400BadRequest, ErrorCodes.GeneratedFieldNotAccepted),
             MasterDataError.SequenceExhausted => (StatusCodes.Status409Conflict, ErrorCodes.SequenceExhausted),
-            MasterDataError.ServingWarehouseUnavailable => (StatusCodes.Status409Conflict, ErrorCodes.ServingWarehouseUnavailable),
             MasterDataError.BaseUnitImmutable => (StatusCodes.Status409Conflict, ErrorCodes.BaseUnitImmutable),
             MasterDataError.ConversionNotDefined => (StatusCodes.Status409Conflict, ErrorCodes.ConversionNotDefined),
             MasterDataError.InvalidConversionFactor => (StatusCodes.Status400BadRequest, ErrorCodes.InvalidConversionFactor),

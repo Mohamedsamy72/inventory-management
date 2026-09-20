@@ -12,9 +12,16 @@ using Xunit;
 
 namespace Inventory.IntegrationTests;
 
-/// <summary>Phase 9 - Multi-Item Supply Requests (docs/09 tasks 9.1-9.14, ADR-028). Every
-/// scenario here must leave the stock ledger completely untouched - creating or submitting a
-/// request has ZERO stock effect.</summary>
+/// <summary>Phase 9 - Multi-Item Supply Requests (docs/09 tasks 9.1-9.14). Every scenario here
+/// must leave the stock ledger completely untouched - creating or submitting a request has ZERO
+/// stock effect.
+///
+/// ADR-028 (one restaurant = one server-derived serving warehouse) was reversed by an explicit
+/// product decision: a restaurant can receive from more than one warehouse, so the warehouse is
+/// now chosen explicitly per request (still validated server-side: must exist, be `Active`, and
+/// belong to the caller's own company via the tenant-scoped `Warehouses` query) rather than
+/// derived from a `restaurants.default_serving_warehouse_id` column, which no longer exists.
+/// </summary>
 public sealed class SupplyRequestTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly WebApplicationFactory<Program> _factory;
@@ -50,7 +57,7 @@ public sealed class SupplyRequestTests : IClassFixture<WebApplicationFactory<Pro
         var warehouse = await warehouseResponse.Content.ReadFromJsonAsync<IdDto>();
 
         using HttpResponseMessage restaurantResponse = await AuthTestHelpers.PostJsonAsync(
-            client, "/api/v1/restaurants", new { nameArabic = "فرع", code = "BR-" + Guid.NewGuid().ToString("N")[..6], defaultServingWarehouseId = warehouse!.Id, address = (string?)null, description = (string?)null });
+            client, "/api/v1/restaurants", new { nameArabic = "فرع", code = "BR-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
         var restaurant = await restaurantResponse.Content.ReadFromJsonAsync<IdDto>();
 
         using HttpResponseMessage categoryResponse = await AuthTestHelpers.PostJsonAsync(
@@ -66,13 +73,13 @@ public sealed class SupplyRequestTests : IClassFixture<WebApplicationFactory<Pro
             new { nameArabic = "صنف " + Guid.NewGuid().ToString("N")[..6], categoryId = category!.Id, baseUnitId = unit!.Id, purchaseUnitId = (Guid?)null, defaultSupplierId = (Guid?)null, description = (string?)null });
         var item = await itemResponse.Content.ReadFromJsonAsync<ItemDto>();
 
-        return new Seed(company.Id, client, restaurant!.Id, warehouse.Id, item!.Id, item.BaseUnitId);
+        return new Seed(company.Id, client, restaurant!.Id, warehouse!.Id, item!.Id, item.BaseUnitId);
     }
 
     private static async Task<RequestDto> CreateDraftAsync(Seed seed)
     {
         using HttpResponseMessage response = await AuthTestHelpers.PostJsonAsync(
-            seed.OwnerClient, "/api/v1/supply-requests", new { restaurantId = seed.RestaurantId });
+            seed.OwnerClient, "/api/v1/supply-requests", new { restaurantId = seed.RestaurantId, warehouseId = seed.WarehouseId });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadFromJsonAsync<RequestDto>(RequestJsonOptions))!;
     }
@@ -179,7 +186,7 @@ public sealed class SupplyRequestTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     [Fact]
-    public async Task Restaurant_With_No_Active_Serving_Warehouse_Returns_409_And_Creates_Nothing()
+    public async Task Creating_A_Request_Against_An_Inactive_Warehouse_Returns_409_And_Creates_Nothing()
     {
         Seed seed = await SeedAsync();
 
@@ -187,7 +194,7 @@ public sealed class SupplyRequestTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Equal(HttpStatusCode.OK, deactivateResponse.StatusCode);
 
         using HttpResponseMessage createResponse = await AuthTestHelpers.PostJsonAsync(
-            seed.OwnerClient, "/api/v1/supply-requests", new { restaurantId = seed.RestaurantId });
+            seed.OwnerClient, "/api/v1/supply-requests", new { restaurantId = seed.RestaurantId, warehouseId = seed.WarehouseId });
         Assert.Equal(HttpStatusCode.Conflict, createResponse.StatusCode);
 
         using IServiceScope scope = _factory.Services.CreateScope();
@@ -196,25 +203,68 @@ public sealed class SupplyRequestTests : IClassFixture<WebApplicationFactory<Pro
         Assert.False(anyCreated);
     }
 
+    /// <summary>Change 1 (product decision reversing ADR-028): a restaurant is no longer pinned
+    /// to one default warehouse - it can receive from more than one, proven here by two
+    /// independent requests for the SAME restaurant each choosing a different warehouse and both
+    /// persisting exactly as chosen.</summary>
     [Fact]
-    public async Task Changing_The_Restaurant_Default_Warehouse_Does_Not_Redirect_Existing_Requests()
+    public async Task A_Restaurant_Can_Have_Requests_Against_Different_Warehouses()
     {
         Seed seed = await SeedAsync();
-        RequestDto request = await CreateDraftAsync(seed);
-        Assert.Equal(seed.WarehouseId, request.WarehouseId);
+        RequestDto firstRequest = await CreateDraftAsync(seed);
+        Assert.Equal(seed.WarehouseId, firstRequest.WarehouseId);
 
         using HttpResponseMessage secondWarehouseResponse = await AuthTestHelpers.PostJsonAsync(
             seed.OwnerClient, "/api/v1/warehouses", new { nameArabic = "مستودع ثاني", code = "WH-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
         var secondWarehouse = await secondWarehouseResponse.Content.ReadFromJsonAsync<IdDto>();
 
-        using HttpResponseMessage updateRestaurantResponse = await AuthTestHelpers.SendJsonAsync(
-            seed.OwnerClient, HttpMethod.Put, $"/api/v1/restaurants/{seed.RestaurantId}/serving-warehouse",
-            new { warehouseId = secondWarehouse!.Id });
-        Assert.Equal(HttpStatusCode.OK, updateRestaurantResponse.StatusCode);
+        using HttpResponseMessage secondCreateResponse = await AuthTestHelpers.PostJsonAsync(
+            seed.OwnerClient, "/api/v1/supply-requests", new { restaurantId = seed.RestaurantId, warehouseId = secondWarehouse!.Id });
+        Assert.Equal(HttpStatusCode.Created, secondCreateResponse.StatusCode);
+        var secondRequest = await secondCreateResponse.Content.ReadFromJsonAsync<RequestDto>(RequestJsonOptions);
+        Assert.Equal(secondWarehouse.Id, secondRequest!.WarehouseId);
 
-        using HttpResponseMessage getResponse = await seed.OwnerClient.GetAsync($"/api/v1/supply-requests/{request.Id}");
-        var refetched = await getResponse.Content.ReadFromJsonAsync<RequestDto>(RequestJsonOptions);
-        Assert.Equal(seed.WarehouseId, refetched!.WarehouseId);
+        using HttpResponseMessage getFirstResponse = await seed.OwnerClient.GetAsync($"/api/v1/supply-requests/{firstRequest.Id}");
+        var refetchedFirst = await getFirstResponse.Content.ReadFromJsonAsync<RequestDto>(RequestJsonOptions);
+        Assert.Equal(seed.WarehouseId, refetchedFirst!.WarehouseId);
+    }
+
+    /// <summary>Change 1: restaurant creation/update no longer requires or accepts any
+    /// warehouse-related field at all.</summary>
+    [Fact]
+    public async Task Creating_A_Restaurant_Does_Not_Require_A_Warehouse()
+    {
+        Seed seed = await SeedAsync();
+
+        using HttpResponseMessage response = await AuthTestHelpers.PostJsonAsync(
+            seed.OwnerClient, "/api/v1/restaurants",
+            new { nameArabic = "فرع بلا مخزن مغذي", code = "BR-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    /// <summary>Change 1 / general tenant-isolation requirement: a company's own warehouse list
+    /// (from which the client picks `warehouseId`) never contains another company's warehouses,
+    /// so a cross-company id is indistinguishable from a nonexistent one and correctly rejected -
+    /// proven here by injecting one directly rather than relying on it merely not being offered
+    /// in a picker.</summary>
+    [Fact]
+    public async Task Creating_A_Request_Against_Another_Companys_Warehouse_Is_Rejected()
+    {
+        Seed seed = await SeedAsync();
+
+        using IServiceScope scope = _factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        Company otherCompany = await AuthTestHelpers.CreateCompanyAsync(context);
+        var otherWarehouse = new Warehouse(otherCompany.Id, "مستودع شركة أخرى", "WH-OTHER-" + Guid.NewGuid().ToString("N")[..6], null, null);
+        context.Warehouses.Add(otherWarehouse);
+        await context.SaveChangesAsync();
+
+        using HttpResponseMessage response = await AuthTestHelpers.PostJsonAsync(
+            seed.OwnerClient, "/api/v1/supply-requests", new { restaurantId = seed.RestaurantId, warehouseId = otherWarehouse.Id });
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+
+        bool anyCreated = await context.SupplyRequests.IgnoreQueryFilters().AnyAsync(r => r.RestaurantId == seed.RestaurantId);
+        Assert.False(anyCreated);
     }
 
     [Fact]
@@ -223,7 +273,7 @@ public sealed class SupplyRequestTests : IClassFixture<WebApplicationFactory<Pro
         Seed seed = await SeedAsync();
 
         using HttpResponseMessage otherRestaurantResponse = await AuthTestHelpers.PostJsonAsync(
-            seed.OwnerClient, "/api/v1/restaurants", new { nameArabic = "فرع آخر", code = "BR-" + Guid.NewGuid().ToString("N")[..6], defaultServingWarehouseId = seed.WarehouseId, address = (string?)null, description = (string?)null });
+            seed.OwnerClient, "/api/v1/restaurants", new { nameArabic = "فرع آخر", code = "BR-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
         var otherRestaurant = await otherRestaurantResponse.Content.ReadFromJsonAsync<IdDto>();
 
         (User supervisorUser, string supervisorPassword) = await AuthTestHelpers.CreateUserInCompanyAsync(_factory, seed.CompanyId);
@@ -236,37 +286,41 @@ public sealed class SupplyRequestTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Equal(HttpStatusCode.OK, scopeResponse.StatusCode);
 
         using HttpResponseMessage forbiddenResponse = await AuthTestHelpers.PostJsonAsync(
-            supervisorClient, "/api/v1/supply-requests", new { restaurantId = otherRestaurant!.Id });
+            supervisorClient, "/api/v1/supply-requests", new { restaurantId = otherRestaurant!.Id, warehouseId = seed.WarehouseId });
         Assert.Equal(HttpStatusCode.Forbidden, forbiddenResponse.StatusCode);
 
         using HttpResponseMessage allowedResponse = await AuthTestHelpers.PostJsonAsync(
-            supervisorClient, "/api/v1/supply-requests", new { restaurantId = seed.RestaurantId });
+            supervisorClient, "/api/v1/supply-requests", new { restaurantId = seed.RestaurantId, warehouseId = seed.WarehouseId });
         Assert.Equal(HttpStatusCode.Created, allowedResponse.StatusCode);
     }
 
-    /// <summary>ADR-028/task 9.12: <see cref="Inventory.Api.Features.SupplyRequests.CreateSupplyRequestRequest"/>
-    /// has no <c>WarehouseId</c> property at all, so a client-posted one is structurally impossible
-    /// to bind - proven here by asserting on the PERSISTED row, not merely the response.</summary>
+    /// <summary>A Restaurant Supervisor has no warehouse-scope concept at all (only Warehouse
+    /// Staff does) - Change 1 deliberately lets them choose ANY active warehouse in their own
+    /// company for a request, proven here against a SECOND warehouse the supervisor was never
+    /// individually granted anything on.</summary>
     [Fact]
-    public async Task An_Over_Posted_WarehouseId_Has_No_Effect_On_The_Persisted_Row()
+    public async Task Restaurant_Supervisor_Can_Choose_Any_Active_Company_Warehouse()
     {
         Seed seed = await SeedAsync();
 
-        using HttpResponseMessage anotherWarehouseResponse = await AuthTestHelpers.PostJsonAsync(
-            seed.OwnerClient, "/api/v1/warehouses", new { nameArabic = "مستودع مخادع", code = "WH-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
-        var anotherWarehouse = await anotherWarehouseResponse.Content.ReadFromJsonAsync<IdDto>();
+        using HttpResponseMessage secondWarehouseResponse = await AuthTestHelpers.PostJsonAsync(
+            seed.OwnerClient, "/api/v1/warehouses", new { nameArabic = "مستودع ثاني", code = "WH-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
+        var secondWarehouse = await secondWarehouseResponse.Content.ReadFromJsonAsync<IdDto>();
+
+        (User supervisorUser, string supervisorPassword) = await AuthTestHelpers.CreateUserInCompanyAsync(_factory, seed.CompanyId);
+        await AuthTestHelpers.AssignRoleAsync(_factory, supervisorUser.Id, RoleName.RestaurantSupervisor);
+        HttpClient supervisorClient = await AuthTestHelpers.LoginAsAsync(_factory, supervisorUser, supervisorPassword);
+
+        using HttpResponseMessage scopeResponse = await AuthTestHelpers.SendJsonAsync(
+            seed.OwnerClient, HttpMethod.Put, $"/api/v1/users/{supervisorUser.Id}/scope",
+            new { warehouseIds = Array.Empty<Guid>(), restaurantIds = new[] { seed.RestaurantId } });
+        Assert.Equal(HttpStatusCode.OK, scopeResponse.StatusCode);
 
         using HttpResponseMessage response = await AuthTestHelpers.PostJsonAsync(
-            seed.OwnerClient, "/api/v1/supply-requests", new { restaurantId = seed.RestaurantId, warehouseId = anotherWarehouse!.Id });
+            supervisorClient, "/api/v1/supply-requests", new { restaurantId = seed.RestaurantId, warehouseId = secondWarehouse!.Id });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var created = await response.Content.ReadFromJsonAsync<RequestDto>(RequestJsonOptions);
-
-        using IServiceScope scope = _factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
-        SupplyRequest persisted = await context.SupplyRequests.IgnoreQueryFilters().AsNoTracking().FirstAsync(r => r.Id == created!.Id);
-
-        Assert.Equal(seed.WarehouseId, persisted.WarehouseId);
-        Assert.NotEqual(anotherWarehouse.Id, persisted.WarehouseId);
+        Assert.Equal(secondWarehouse.Id, created!.WarehouseId);
     }
 
     [Fact]

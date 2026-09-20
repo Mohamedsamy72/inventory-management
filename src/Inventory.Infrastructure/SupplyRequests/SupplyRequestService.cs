@@ -41,13 +41,15 @@ public sealed class SupplyRequestService : ISupplyRequestService
             return TransactionalResult.Failure<SupplyRequestSummary>(TransactionalError.NotFound);
         }
 
-        // ADR-028 (task 9.8/9.8a): resolved once, here, from the restaurant's own configuration -
-        // never from client input, and never falls back to another warehouse.
+        // Change 1 (reversed ADR-028): the warehouse is chosen by the client, not derived - but
+        // still validated here, never trusted as-is. `_context.Warehouses` already carries the
+        // tenant global query filter (ADR-016), so a cross-company id is indistinguishable from
+        // a nonexistent one and both correctly fail closed with the same error.
         Warehouse? warehouse = await _context.Warehouses.AsNoTracking()
-            .FirstOrDefaultAsync(w => w.Id == restaurant.DefaultServingWarehouseId, cancellationToken);
+            .FirstOrDefaultAsync(w => w.Id == command.WarehouseId, cancellationToken);
         if (warehouse is null || warehouse.Status != WarehouseStatus.Active)
         {
-            return TransactionalResult.Failure<SupplyRequestSummary>(TransactionalError.ServingWarehouseUnavailable);
+            return TransactionalResult.Failure<SupplyRequestSummary>(TransactionalError.WarehouseUnavailable);
         }
 
         await using IDbContextTransaction transaction = await _context.Database.BeginTransactionAsync(cancellationToken);

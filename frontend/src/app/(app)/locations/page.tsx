@@ -14,8 +14,9 @@ interface WarehouseSummary {
 }
 
 /** Task F3 (guide §8.2 "`/locations`"). Warehouses and restaurants share one screen
- * behind tabs - both are location master data, but their forms genuinely differ
- * (a restaurant requires a serving-warehouse selection; a warehouse does not). */
+ * behind tabs - both are location master data. Neither carries a warehouse-selection
+ * field on the restaurant side (Change 1 reversed ADR-028's single default serving
+ * warehouse); the two tabs' forms differ only in their plain fields (code, address). */
 export default function LocationsPage() {
   return (
     <Tabs defaultValue="warehouses">

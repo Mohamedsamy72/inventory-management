@@ -247,11 +247,11 @@ public sealed class StockCountTests : IClassFixture<WebApplicationFactory<Progra
         Seed seed = await SeedAsync(openingBalance: 100m);
 
         using HttpResponseMessage restaurantResponse = await AuthTestHelpers.PostJsonAsync(
-            seed.OwnerClient, "/api/v1/restaurants", new { nameArabic = "فرع", code = "BR-" + Guid.NewGuid().ToString("N")[..6], defaultServingWarehouseId = seed.WarehouseId, address = (string?)null, description = (string?)null });
+            seed.OwnerClient, "/api/v1/restaurants", new { nameArabic = "فرع", code = "BR-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
         var restaurant = await restaurantResponse.Content.ReadFromJsonAsync<IdDto>();
 
         using HttpResponseMessage createRequest = await AuthTestHelpers.PostJsonAsync(
-            seed.OwnerClient, "/api/v1/supply-requests", new { restaurantId = restaurant!.Id });
+            seed.OwnerClient, "/api/v1/supply-requests", new { restaurantId = restaurant!.Id, warehouseId = seed.WarehouseId });
         var request = await createRequest.Content.ReadFromJsonAsync<JsonElement>();
         Guid requestId = request.GetProperty("id").GetGuid();
 

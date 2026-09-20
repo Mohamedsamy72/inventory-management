@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import type { CellContext, ColumnDef } from '@tanstack/react-table';
-import { Plus, Pencil, Power, PowerOff, Warehouse as WarehouseIcon } from 'lucide-react';
+import { Plus, Pencil, Power, PowerOff } from 'lucide-react';
 import { useSession } from '@/lib/auth/session-context';
 import { useKeysetList } from '@/lib/use-keyset-list';
 import { apiClient, ApiError } from '@/lib/api-client';
@@ -11,7 +11,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -27,39 +26,23 @@ interface RestaurantSummary {
   id: string;
   nameArabic: string;
   code: string;
-  defaultServingWarehouseId: string;
   address: string | null;
   description: string | null;
   isActive: boolean;
 }
 
-interface WarehouseSummary {
-  id: string;
-  nameArabic: string;
-  code: string;
-  isActive: boolean;
-}
-
 /**
- * Task F3 (guide §8.2 "`/locations`"). Restaurants differ from the other simple
- * master-data entities in a way that genuinely justifies a dedicated screen: creation
- * requires picking a serving warehouse (ADR-028's `defaultServingWarehouseId`), and an
- * existing restaurant's serving warehouse can be changed independently of its other
- * fields via its own dedicated endpoint/action.
+ * Task F3 (guide §8.2 "`/locations`").
+ *
+ * Change 1 (product decision reversing ADR-028): a restaurant is pure master data - name,
+ * code, address, description - with NO warehouse field at all. It is no longer pinned to one
+ * "serving warehouse"; a restaurant can receive from more than one warehouse, chosen per supply
+ * request instead (see `/supply-requests`' create dialog).
  */
 export function RestaurantsScreen() {
   const { profile } = useSession();
   const { items, isLoading, error, hasNextPage, hasPreviousPage, nextPage, previousPage, refetch } =
     useKeysetList<RestaurantSummary>('/api/v1/restaurants');
-
-  const [warehouses, setWarehouses] = useState<WarehouseSummary[]>([]);
-
-  useEffect(() => {
-    apiClient
-      .get<{ items: WarehouseSummary[] }>('/api/v1/warehouses?limit=100')
-      .then((page) => setWarehouses(page.items.filter((warehouse) => warehouse.isActive)))
-      .catch(() => setWarehouses([]));
-  }, []);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<RestaurantSummary | null>(null);
@@ -67,7 +50,6 @@ export function RestaurantsScreen() {
   const [code, setCode] = useState('');
   const [address, setAddress] = useState('');
   const [description, setDescription] = useState('');
-  const [servingWarehouseId, setServingWarehouseId] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
@@ -82,7 +64,6 @@ export function RestaurantsScreen() {
     setCode('');
     setAddress('');
     setDescription('');
-    setServingWarehouseId('');
     setFormError(null);
     setDialogOpen(true);
   }
@@ -93,7 +74,6 @@ export function RestaurantsScreen() {
     setCode(row.code);
     setAddress(row.address ?? '');
     setDescription(row.description ?? '');
-    setServingWarehouseId(row.defaultServingWarehouseId);
     setFormError(null);
     setDialogOpen(true);
   }
@@ -110,14 +90,10 @@ export function RestaurantsScreen() {
           address: address || null,
           description: description || null,
         });
-        if (servingWarehouseId !== editing.defaultServingWarehouseId) {
-          await apiClient.put(`/api/v1/restaurants/${editing.id}/serving-warehouse`, { warehouseId: servingWarehouseId });
-        }
       } else {
         await apiClient.post('/api/v1/restaurants', {
           nameArabic,
           code,
-          defaultServingWarehouseId: servingWarehouseId,
           address: address || null,
           description: description || null,
         });
@@ -139,10 +115,6 @@ export function RestaurantsScreen() {
     } finally {
       setTogglingId(null);
     }
-  }
-
-  function warehouseName(id: string): string {
-    return warehouses.find((warehouse) => warehouse.id === id)?.nameArabic ?? '—';
   }
 
   const columns: ColumnDef<RestaurantSummary, unknown>[] = [
@@ -167,7 +139,6 @@ export function RestaurantsScreen() {
       ),
     },
     { id: 'status', header: 'الحالة', cell: ({ row }: CellContext<RestaurantSummary, unknown>) => <Badge variant={row.original.isActive ? 'default' : 'secondary'}>{row.original.isActive ? 'نشط' : 'غير نشط'}</Badge> },
-    { id: 'warehouse', header: 'المخزن المغذي', cell: ({ row }: CellContext<RestaurantSummary, unknown>) => warehouseName(row.original.defaultServingWarehouseId) },
     { id: 'code', header: 'الكود', cell: ({ row }: CellContext<RestaurantSummary, unknown>) => row.original.code },
     { id: 'nameArabic', header: 'الاسم', cell: ({ row }: CellContext<RestaurantSummary, unknown>) => row.original.nameArabic },
   ].reverse();
@@ -198,10 +169,6 @@ export function RestaurantsScreen() {
             <div>
               <p className="font-medium text-foreground">{row.nameArabic}</p>
               <p className="text-xs text-muted-foreground">{row.code}</p>
-              <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                <WarehouseIcon className="size-3.5" aria-hidden="true" />
-                {warehouseName(row.defaultServingWarehouseId)}
-              </div>
             </div>
             <div className="flex items-center gap-1">
               <Button variant="ghost" size="icon-sm" onClick={() => openEdit(row)} aria-label="تعديل">
@@ -253,24 +220,6 @@ export function RestaurantsScreen() {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="restaurant-warehouse">
-                المخزن المغذي <span aria-hidden="true" className="text-destructive">*</span>
-              </Label>
-              <Select value={servingWarehouseId} onValueChange={setServingWarehouseId} required>
-                <SelectTrigger id="restaurant-warehouse" className="w-full">
-                  <SelectValue placeholder="اختر المخزن" />
-                </SelectTrigger>
-                <SelectContent>
-                  {warehouses.map((warehouse) => (
-                    <SelectItem key={warehouse.id} value={warehouse.id}>
-                      {warehouse.nameArabic}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
               <Label htmlFor="restaurant-address">العنوان</Label>
               <Input id="restaurant-address" value={address} onChange={(event) => setAddress(event.target.value)} />
             </div>
@@ -281,7 +230,7 @@ export function RestaurantsScreen() {
             </div>
 
             <DialogFooter>
-              <Button type="submit" loading={isSubmitting} disabled={!servingWarehouseId}>
+              <Button type="submit" loading={isSubmitting}>
                 حفظ
               </Button>
             </DialogFooter>

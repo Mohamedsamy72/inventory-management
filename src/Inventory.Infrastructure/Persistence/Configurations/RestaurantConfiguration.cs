@@ -17,7 +17,6 @@ public sealed class RestaurantConfiguration : IEntityTypeConfiguration<Restauran
         builder.Property(e => e.NameArabic).HasColumnName("name_arabic").HasMaxLength(200).IsRequired();
         builder.Property(e => e.Code).HasColumnName("code").HasMaxLength(50).IsRequired();
         builder.Property(e => e.Status).HasColumnName("status").HasConversion<string>().HasMaxLength(30).IsRequired();
-        builder.Property(e => e.DefaultServingWarehouseId).HasColumnName("default_serving_warehouse_id").IsRequired();
         builder.Property(e => e.Address).HasColumnName("address");
         builder.Property(e => e.Description).HasColumnName("description");
         builder.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
@@ -27,13 +26,9 @@ public sealed class RestaurantConfiguration : IEntityTypeConfiguration<Restauran
         builder.HasIndex(e => new { e.CompanyId, e.Code }).IsUnique().HasDatabaseName("uq_restaurants_company_code");
         builder.HasIndex(e => new { e.CompanyId, e.CreatedAt, e.Id }).IsDescending(false, true, true).HasDatabaseName("ix_restaurants_tenant_keyset");
 
-        // ADR-028 / docs/29 section 4.2: the serving warehouse must be in the same company -
-        // structural, not an application-level assertion (BR-29-10).
-        builder.HasOne<Warehouse>().WithMany()
-            .HasForeignKey(e => new { e.CompanyId, e.DefaultServingWarehouseId })
-            .HasPrincipalKey(w => new { w.CompanyId, w.Id })
-            .OnDelete(DeleteBehavior.Restrict)
-            .HasConstraintName("fk_restaurants_serving_warehouse");
-        builder.HasIndex(e => new { e.CompanyId, e.DefaultServingWarehouseId }).HasDatabaseName("ix_restaurants_serving_wh");
+        // Change 1 (product decision reversing ADR-028): a restaurant is no longer pinned to one
+        // "serving warehouse" - the column, its FK, and its index were dropped (see the
+        // RemoveRestaurantServingWarehouse migration). Which warehouse a supply request targets
+        // is validated at request-creation time instead (SupplyRequestService.CreateDraftAsync).
     }
 }

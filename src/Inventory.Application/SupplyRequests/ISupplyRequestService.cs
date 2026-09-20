@@ -8,9 +8,9 @@ namespace Inventory.Application.SupplyRequests;
 /// row; only restaurant receipt confirmation (Phase 11) does.</summary>
 public interface ISupplyRequestService
 {
-    /// <summary>ADR-028 (task 9.8): resolves <c>restaurants.default_serving_warehouse_id</c>
-    /// server-side and verifies it is Active - <see cref="TransactionalError.ServingWarehouseUnavailable"/>
-    /// otherwise, with no fallback to any other warehouse.</summary>
+    /// <summary>Change 1 (reversed ADR-028): the caller names the warehouse explicitly - this
+    /// verifies it exists, is `Active`, and belongs to the caller's own company, returning
+    /// <see cref="TransactionalError.WarehouseUnavailable"/> otherwise.</summary>
     Task<TransactionalResult<SupplyRequestSummary>> CreateDraftAsync(CreateSupplyRequestCommand command, CancellationToken cancellationToken);
 
     Task<SupplyRequestSummary?> GetAsync(Guid id, CancellationToken cancellationToken);

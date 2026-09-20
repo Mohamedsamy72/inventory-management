@@ -53,7 +53,7 @@ public sealed class SupplyFulfillmentTests : IClassFixture<WebApplicationFactory
         var warehouse = await warehouseResponse.Content.ReadFromJsonAsync<IdDto>();
 
         using HttpResponseMessage restaurantResponse = await AuthTestHelpers.PostJsonAsync(
-            client, "/api/v1/restaurants", new { nameArabic = "فرع", code = "BR-" + Guid.NewGuid().ToString("N")[..6], defaultServingWarehouseId = warehouse!.Id, address = (string?)null, description = (string?)null });
+            client, "/api/v1/restaurants", new { nameArabic = "فرع", code = "BR-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
         var restaurant = await restaurantResponse.Content.ReadFromJsonAsync<IdDto>();
 
         using HttpResponseMessage categoryResponse = await AuthTestHelpers.PostJsonAsync(
@@ -69,7 +69,7 @@ public sealed class SupplyFulfillmentTests : IClassFixture<WebApplicationFactory
             new { nameArabic = "صنف " + Guid.NewGuid().ToString("N")[..6], categoryId = category!.Id, baseUnitId = unit!.Id, purchaseUnitId = (Guid?)null, defaultSupplierId = (Guid?)null, description = (string?)null });
         var item = await itemResponse.Content.ReadFromJsonAsync<ItemDto>();
 
-        var seed = new Seed(company.Id, client, restaurant!.Id, warehouse.Id, item!.Id, item.BaseUnitId);
+        var seed = new Seed(company.Id, client, restaurant!.Id, warehouse!.Id, item!.Id, item.BaseUnitId);
 
         if (openingBalance > 0)
         {
@@ -105,7 +105,7 @@ public sealed class SupplyFulfillmentTests : IClassFixture<WebApplicationFactory
     private static async Task<RequestDto> CreateSubmittedRequestAsync(Seed seed, decimal requestedQuantity)
     {
         using HttpResponseMessage createResponse = await AuthTestHelpers.PostJsonAsync(
-            seed.OwnerClient, "/api/v1/supply-requests", new { restaurantId = seed.RestaurantId });
+            seed.OwnerClient, "/api/v1/supply-requests", new { restaurantId = seed.RestaurantId, warehouseId = seed.WarehouseId });
         var request = await createResponse.Content.ReadFromJsonAsync<RequestDto>(JsonOptions);
 
         await AuthTestHelpers.PostJsonAsync(

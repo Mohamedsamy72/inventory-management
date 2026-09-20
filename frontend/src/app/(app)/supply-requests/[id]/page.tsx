@@ -65,8 +65,9 @@ interface WarehouseStockLine {
  * request editor (Draft, Restaurant Supervisor) and the fulfilment panel (Submitted/
  * PartiallyFulfilled, Warehouse Staff) live on the same page, since both act on the same
  * document and never overlap in time (a Supervisor cannot edit once Submitted; Warehouse
- * Staff cannot fulfil a Draft). No warehouse selector anywhere (ADR-028) - `request.warehouseId`
- * is read-only, server-resolved, and only ever displayed.
+ * Staff cannot fulfil a Draft). `request.warehouseId` is chosen once, by the Supervisor, on the
+ * create dialog (Change 1 reversed ADR-028's server-derived single default) - read-only here,
+ * only ever displayed.
  */
 export default function SupplyRequestPage() {
   const params = useParams<{ id: string }>();
@@ -288,7 +289,7 @@ export default function SupplyRequestPage() {
           <p className="text-sm text-muted-foreground">
             {restaurants.find((restaurant) => restaurant.id === request.restaurantId)?.nameArabic ?? '—'}
             {' · '}
-            المخزن المغذي: {warehouses.find((warehouse) => warehouse.id === request.warehouseId)?.nameArabic ?? '—'}
+            المخزن: {warehouses.find((warehouse) => warehouse.id === request.warehouseId)?.nameArabic ?? '—'}
           </p>
         </div>
         <StatusBadge entity="SupplyRequest" status={request.status} />

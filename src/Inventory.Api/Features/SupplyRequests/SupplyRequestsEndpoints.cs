@@ -8,7 +8,7 @@ namespace Inventory.Api.Features.SupplyRequests;
 /// <summary>ADR-028 (docs/09 task 9.8): deliberately carries no <c>WarehouseId</c> - the server
 /// derives it from the restaurant's own configuration. A client posting one anyway is simply
 /// ignored by the model binder, since no property exists here to bind it to (task 9.12).</summary>
-public sealed record CreateSupplyRequestRequest(Guid RestaurantId);
+public sealed record CreateSupplyRequestRequest(Guid RestaurantId, Guid WarehouseId);
 public sealed record AddSupplyRequestLineRequest(Guid ItemId, Guid UnitId, decimal RequestedQuantity, string? Notes);
 public sealed record UpdateSupplyRequestLineRequest(Guid UnitId, decimal RequestedQuantity, string? Notes);
 
@@ -54,7 +54,7 @@ public static class SupplyRequestsEndpoints
             return forbidden;
         }
 
-        var command = new CreateSupplyRequestCommand(request.RestaurantId);
+        var command = new CreateSupplyRequestCommand(request.RestaurantId, request.WarehouseId);
         var result = await service.CreateDraftAsync(command, httpContext.RequestAborted);
         return result.Succeeded ? Results.Created($"/api/v1/supply-requests/{result.Value!.Id}", result.Value) : await TransactionalErrorWriter.WriteErrorAsync(httpContext, result.Error, result.ErrorDetail);
     }

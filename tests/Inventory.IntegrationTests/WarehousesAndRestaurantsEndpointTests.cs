@@ -10,10 +10,15 @@ using Xunit;
 
 namespace Inventory.IntegrationTests;
 
-/// <summary>Tasks 5.8-5.9. Focused on what is genuinely specific to these two resources: the
-/// ADR-028 SW-6 serving-warehouse validation at restaurant creation. Pagination/permission/
-/// tenant-isolation coverage is shared infrastructure already proven by
-/// <see cref="CategoriesEndpointTests"/>.</summary>
+/// <summary>Tasks 5.8-5.9. Focused on what is genuinely specific to these two resources.
+/// Pagination/permission/tenant-isolation coverage is shared infrastructure already proven by
+/// <see cref="CategoriesEndpointTests"/>.
+///
+/// Restaurant creation no longer references any warehouse at all (Change 1 reversed ADR-028 -
+/// a restaurant can receive from more than one warehouse, so there is no single default to
+/// validate here); the equivalent warehouse-validity/tenant-isolation coverage now lives in
+/// <see cref="SupplyRequestTests"/>, at the point a warehouse is actually chosen (request
+/// creation).</summary>
 public sealed class WarehousesAndRestaurantsEndpointTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly WebApplicationFactory<Program> _factory;
@@ -58,70 +63,41 @@ public sealed class WarehousesAndRestaurantsEndpointTests : IClassFixture<WebApp
         Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
     }
 
+    /// <summary>Change 1: restaurant creation declares no warehouse field at all - a restaurant
+    /// is a pure consumption node, receiving from whichever warehouse a given supply request
+    /// names, not pinned to one at creation time.</summary>
     [Fact]
-    public async Task Creating_A_Restaurant_With_An_Active_Serving_Warehouse_Succeeds()
+    public async Task Creating_A_Restaurant_Without_Any_Warehouse_Succeeds()
     {
         using HttpClient client = await LoginAsOwnerAsync();
-        Guid warehouseId = await CreateWarehouseAsync(client);
 
         using HttpResponseMessage response = await AuthTestHelpers.PostJsonAsync(
             client, "/api/v1/restaurants",
-            new { nameArabic = "فرع مدينة نصر", code = "RST-" + Guid.NewGuid().ToString("N")[..6], defaultServingWarehouseId = warehouseId, address = (string?)null, description = (string?)null });
+            new { nameArabic = "فرع مدينة نصر", code = "RST-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<RestaurantDto>();
-        Assert.Equal(warehouseId, body!.DefaultServingWarehouseId);
+        Assert.True(body!.IsActive);
     }
 
-    /// <summary>ADR-028 SW-6: a restaurant cannot be created pointing at a warehouse that does
-    /// not exist in this tenant - including a real warehouse id from a DIFFERENT company, which
-    /// the tenant query filter makes indistinguishable from nonexistent.</summary>
+    /// <summary>A restaurant update also declares no warehouse field - only name/address/
+    /// description are editable through this endpoint.</summary>
     [Fact]
-    public async Task Creating_A_Restaurant_With_A_Nonexistent_Serving_Warehouse_Returns_409()
+    public async Task Updating_A_Restaurant_Does_Not_Require_A_Warehouse()
     {
         using HttpClient client = await LoginAsOwnerAsync();
-
-        using HttpResponseMessage response = await AuthTestHelpers.PostJsonAsync(
+        using HttpResponseMessage createResponse = await AuthTestHelpers.PostJsonAsync(
             client, "/api/v1/restaurants",
-            new { nameArabic = "فرع بلا مستودع", code = "RST-" + Guid.NewGuid().ToString("N")[..6], defaultServingWarehouseId = Guid.NewGuid(), address = (string?)null, description = (string?)null });
+            new { nameArabic = "فرع قبل التعديل", code = "RST-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
+        var restaurant = await createResponse.Content.ReadFromJsonAsync<RestaurantDto>();
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        string body = await response.Content.ReadAsStringAsync();
-        Assert.Contains("SERVING_WAREHOUSE_UNAVAILABLE", body, StringComparison.Ordinal);
-    }
+        using HttpResponseMessage updateResponse = await AuthTestHelpers.SendJsonAsync(
+            client, HttpMethod.Put, $"/api/v1/restaurants/{restaurant!.Id}",
+            new { nameArabic = "فرع بعد التعديل", address = (string?)null, description = (string?)null });
 
-    [Fact]
-    public async Task Creating_A_Restaurant_With_An_Inactive_Serving_Warehouse_Returns_409()
-    {
-        using HttpClient client = await LoginAsOwnerAsync();
-        Guid warehouseId = await CreateWarehouseAsync(client);
-        using HttpResponseMessage deactivate = await AuthTestHelpers.PostJsonAsync(client, $"/api/v1/warehouses/{warehouseId}/deactivate", new { });
-        Assert.Equal(HttpStatusCode.OK, deactivate.StatusCode);
-
-        using HttpResponseMessage response = await AuthTestHelpers.PostJsonAsync(
-            client, "/api/v1/restaurants",
-            new { nameArabic = "فرع بمستودع معطل", code = "RST-" + Guid.NewGuid().ToString("N")[..6], defaultServingWarehouseId = warehouseId, address = (string?)null, description = (string?)null });
-
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        string body = await response.Content.ReadAsStringAsync();
-        Assert.Contains("SERVING_WAREHOUSE_UNAVAILABLE", body, StringComparison.Ordinal);
-    }
-
-    /// <summary>A real warehouse id belonging to a DIFFERENT company must be rejected exactly
-    /// like a nonexistent one, never silently accepted (which would violate ADR-016's tenant
-    /// isolation guarantee).</summary>
-    [Fact]
-    public async Task Creating_A_Restaurant_With_Another_Companys_Warehouse_Returns_409()
-    {
-        using HttpClient ownerAClient = await LoginAsOwnerAsync();
-        using HttpClient ownerBClient = await LoginAsOwnerAsync();
-        Guid otherCompanyWarehouseId = await CreateWarehouseAsync(ownerBClient);
-
-        using HttpResponseMessage response = await AuthTestHelpers.PostJsonAsync(
-            ownerAClient, "/api/v1/restaurants",
-            new { nameArabic = "فرع بمستودع شركة أخرى", code = "RST-" + Guid.NewGuid().ToString("N")[..6], defaultServingWarehouseId = otherCompanyWarehouseId, address = (string?)null, description = (string?)null });
-
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+        var updated = await updateResponse.Content.ReadFromJsonAsync<RestaurantDto>();
+        Assert.Equal("فرع بعد التعديل", updated!.NameArabic);
     }
 
     /// <summary>A Warehouse Staff / Restaurant Supervisor user holds no `warehouses:manage` or
@@ -155,15 +131,14 @@ public sealed class WarehousesAndRestaurantsEndpointTests : IClassFixture<WebApp
     public async Task Restaurant_Supervisor_Can_List_Restaurant_Names_But_Not_The_Full_Manage_Gated_List()
     {
         using HttpClient ownerClient = await LoginAsOwnerAsync();
-        Guid warehouseId = await CreateWarehouseAsync(ownerClient);
         using HttpResponseMessage restaurantResponse = await AuthTestHelpers.PostJsonAsync(
             ownerClient, "/api/v1/restaurants",
-            new { nameArabic = "فرع الاختبار", code = "RST-" + Guid.NewGuid().ToString("N")[..6], defaultServingWarehouseId = warehouseId, address = (string?)null, description = (string?)null });
+            new { nameArabic = "فرع الاختبار", code = "RST-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
         var restaurant = await restaurantResponse.Content.ReadFromJsonAsync<RestaurantDto>();
 
         using IServiceScope scope = _factory.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
-        Guid companyId = (await context.Warehouses.IgnoreQueryFilters().FirstAsync(w => w.Id == warehouseId)).CompanyId;
+        Guid companyId = (await context.Restaurants.IgnoreQueryFilters().FirstAsync(r => r.Id == restaurant!.Id)).CompanyId;
         (User supervisorUser, string supervisorPassword) = await AuthTestHelpers.CreateUserInCompanyAsync(_factory, companyId);
         await AuthTestHelpers.AssignRoleAsync(_factory, supervisorUser.Id, RoleName.RestaurantSupervisor);
         using HttpClient supervisorClient = await AuthTestHelpers.LoginAsAsync(_factory, supervisorUser, supervisorPassword);
@@ -187,7 +162,7 @@ public sealed class WarehousesAndRestaurantsEndpointTests : IClassFixture<WebApp
     }
 
     private sealed record WarehouseDto(Guid Id, string NameArabic, string Code, bool IsActive);
-    private sealed record RestaurantDto(Guid Id, string NameArabic, string Code, Guid DefaultServingWarehouseId, bool IsActive);
+    private sealed record RestaurantDto(Guid Id, string NameArabic, string Code, bool IsActive);
     private sealed record WarehouseNameDto(Guid Id, string NameArabic, string Code);
     private sealed record RestaurantNameDto(Guid Id, string NameArabic, string Code);
 }

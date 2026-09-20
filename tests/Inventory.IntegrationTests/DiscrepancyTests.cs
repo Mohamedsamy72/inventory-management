@@ -55,7 +55,7 @@ public sealed class DiscrepancyTests : IClassFixture<WebApplicationFactory<Progr
         var warehouse = await warehouseResponse.Content.ReadFromJsonAsync<IdDto>();
 
         using HttpResponseMessage restaurantResponse = await AuthTestHelpers.PostJsonAsync(
-            client, "/api/v1/restaurants", new { nameArabic = "فرع", code = "BR-" + Guid.NewGuid().ToString("N")[..6], defaultServingWarehouseId = warehouse!.Id, address = (string?)null, description = (string?)null });
+            client, "/api/v1/restaurants", new { nameArabic = "فرع", code = "BR-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
         var restaurant = await restaurantResponse.Content.ReadFromJsonAsync<IdDto>();
 
         using HttpResponseMessage categoryResponse = await AuthTestHelpers.PostJsonAsync(
@@ -71,7 +71,7 @@ public sealed class DiscrepancyTests : IClassFixture<WebApplicationFactory<Progr
             new { nameArabic = "صنف " + Guid.NewGuid().ToString("N")[..6], categoryId = category!.Id, baseUnitId = unit!.Id, purchaseUnitId = (Guid?)null, defaultSupplierId = (Guid?)null, description = (string?)null });
         var item = await itemResponse.Content.ReadFromJsonAsync<ItemDto>();
 
-        var seed = new Seed(company.Id, client, restaurant!.Id, warehouse.Id, item!.Id, item.BaseUnitId);
+        var seed = new Seed(company.Id, client, restaurant!.Id, warehouse!.Id, item!.Id, item.BaseUnitId);
 
         if (openingBalance > 0)
         {
@@ -118,7 +118,7 @@ public sealed class DiscrepancyTests : IClassFixture<WebApplicationFactory<Progr
         Seed seed = await SeedAsync(openingBalance: 20m);
 
         using HttpResponseMessage createRequest = await AuthTestHelpers.PostJsonAsync(
-            seed.OwnerClient, "/api/v1/supply-requests", new { restaurantId = seed.RestaurantId });
+            seed.OwnerClient, "/api/v1/supply-requests", new { restaurantId = seed.RestaurantId, warehouseId = seed.WarehouseId });
         var request = await createRequest.Content.ReadFromJsonAsync<RequestDto>(JsonOptions);
 
         await AuthTestHelpers.PostJsonAsync(

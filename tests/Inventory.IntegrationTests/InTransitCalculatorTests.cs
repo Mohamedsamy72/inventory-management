@@ -53,7 +53,7 @@ public sealed class InTransitCalculatorTests : IClassFixture<WebApplicationFacto
 
         using HttpResponseMessage restaurantResponse = await AuthTestHelpers.PostJsonAsync(
             client, "/api/v1/restaurants",
-            new { nameArabic = "فرع", code = "RST-" + Guid.NewGuid().ToString("N")[..6], defaultServingWarehouseId = warehouse!.Id, address = (string?)null, description = (string?)null });
+            new { nameArabic = "فرع", code = "RST-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
         var restaurant = await restaurantResponse.Content.ReadFromJsonAsync<IdDto>();
 
         using HttpResponseMessage categoryResponse = await AuthTestHelpers.PostJsonAsync(
@@ -74,7 +74,7 @@ public sealed class InTransitCalculatorTests : IClassFixture<WebApplicationFacto
             var writeContext = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
             AuthenticateScopeAs(scope.ServiceProvider, company.Id);
 
-            var supply = new Supply(company.Id, warehouse.Id, restaurant!.Id, supplyRequestId: null, "SUP-202609-0001", owner.Id);
+            var supply = new Supply(company.Id, warehouse!.Id, restaurant!.Id, supplyRequestId: null, "SUP-202609-0001", owner.Id);
             supply.Dispatch(owner.Id);
             writeContext.Supplies.Add(supply);
             writeContext.SupplyItems.Add(new SupplyItem(supply.Id, null, item!.Id, 20m, unit.Id, 20m));
@@ -108,7 +108,7 @@ public sealed class InTransitCalculatorTests : IClassFixture<WebApplicationFacto
 
         using HttpResponseMessage restaurantResponse = await AuthTestHelpers.PostJsonAsync(
             client, "/api/v1/restaurants",
-            new { nameArabic = "فرع", code = "RST-" + Guid.NewGuid().ToString("N")[..6], defaultServingWarehouseId = warehouse!.Id, address = (string?)null, description = (string?)null });
+            new { nameArabic = "فرع", code = "RST-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
         var restaurant = await restaurantResponse.Content.ReadFromJsonAsync<IdDto>();
 
         using HttpResponseMessage categoryResponse = await AuthTestHelpers.PostJsonAsync(
@@ -129,7 +129,7 @@ public sealed class InTransitCalculatorTests : IClassFixture<WebApplicationFacto
             var writeContext = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
             AuthenticateScopeAs(scope.ServiceProvider, company.Id);
 
-            var supply = new Supply(company.Id, warehouse.Id, restaurant!.Id, supplyRequestId: null, "SUP-202609-0002", owner.Id);
+            var supply = new Supply(company.Id, warehouse!.Id, restaurant!.Id, supplyRequestId: null, "SUP-202609-0002", owner.Id);
             supply.Dispatch(owner.Id);
             supply.Confirm(owner.Id, SupplyStatus.Confirmed);
             writeContext.Supplies.Add(supply);
