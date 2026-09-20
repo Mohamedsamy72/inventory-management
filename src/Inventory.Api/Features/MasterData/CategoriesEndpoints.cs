@@ -21,6 +21,7 @@ public static class CategoriesEndpoints
         categories.MapGet("/", ListAsync).RequireAuthorization("categories:manage");
         categories.MapGet("/{id:guid}", GetAsync).RequireAuthorization("categories:manage");
         categories.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("categories:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        categories.MapDelete("/{id:guid}", DeleteAsync).RequireAuthorization("categories:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         categories.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("categories:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         categories.MapPost("/{id:guid}/reactivate", ReactivateAsync).RequireAuthorization("categories:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
 
@@ -51,6 +52,12 @@ public static class CategoriesEndpoints
     {
         var result = await service.UpdateAsync(id, new UpdateCategoryCommand(request.NameArabic, request.Description), httpContext.RequestAborted);
         return result.Succeeded ? Results.Ok(result.Value) : await MasterDataErrorWriter.WriteErrorAsync(httpContext, result.Error);
+    }
+
+    private static async Task<IResult> DeleteAsync(Guid id, HttpContext httpContext, ICategoryService service)
+    {
+        var result = await service.DeleteAsync(id, httpContext.RequestAborted);
+        return result.Succeeded ? Results.NoContent() : await MasterDataErrorWriter.WriteErrorAsync(httpContext, result.Error);
     }
 
     private static async Task<IResult> DeactivateAsync(Guid id, HttpContext httpContext, ICategoryService service)

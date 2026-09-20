@@ -27,6 +27,7 @@ public static class ItemsEndpoints
         items.MapGet("/{id:guid}", GetAsync).RequireAuthorization("items:view");
         items.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("items:update").AddEndpointFilter<AntiforgeryEndpointFilter>();
         items.MapPut("/{id:guid}/base-unit", ChangeBaseUnitAsync).RequireAuthorization("items:update").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        items.MapDelete("/{id:guid}", DeleteAsync).RequireAuthorization("items:delete").AddEndpointFilter<AntiforgeryEndpointFilter>();
         items.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("items:delete").AddEndpointFilter<AntiforgeryEndpointFilter>();
         items.MapPost("/{id:guid}/reactivate", ReactivateAsync).RequireAuthorization("items:delete").AddEndpointFilter<AntiforgeryEndpointFilter>();
 
@@ -76,6 +77,12 @@ public static class ItemsEndpoints
     {
         var result = await service.ChangeBaseUnitAsync(id, request.BaseUnitId, httpContext.RequestAborted);
         return result.Succeeded ? Results.Ok(result.Value) : await MasterDataErrorWriter.WriteErrorAsync(httpContext, result.Error);
+    }
+
+    private static async Task<IResult> DeleteAsync(Guid id, HttpContext httpContext, IItemService service)
+    {
+        var result = await service.DeleteAsync(id, httpContext.RequestAborted);
+        return result.Succeeded ? Results.NoContent() : await MasterDataErrorWriter.WriteErrorAsync(httpContext, result.Error);
     }
 
     private static async Task<IResult> DeactivateAsync(Guid id, HttpContext httpContext, IItemService service)

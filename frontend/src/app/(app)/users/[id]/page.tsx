@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { UserPasswordCard, UserProfileCard } from '@/components/features/user-account-cards';
 import { ErrorBanner } from '@/components/feedback/error-banner';
 import { ForbiddenState } from '@/components/feedback/forbidden-state';
 import { LoadingSkeleton } from '@/components/feedback/loading-skeleton';
@@ -87,6 +88,8 @@ export default function UserDetailPage() {
     apiClient.get<NamedOption[]>('/api/v1/warehouses/names').then(setWarehouses).catch(() => undefined);
     apiClient.get<NamedOption[]>('/api/v1/restaurants/names').then(setRestaurants).catch(() => undefined);
     apiClient.get<PermissionCatalogueItem[]>('/api/v1/permissions').then(setPermissionCatalogue).catch(() => undefined);
+    // The editor must start from the user's REAL effective permissions - starting empty and saving would deny everything.
+    apiClient.get<string[]>(`/api/v1/users/${params.id}/permissions`).then((codes) => { setGrantedCodes(new Set(codes)); setEffectiveCodes(new Set(codes)); }).catch(() => undefined);
   }, [params.id]);
 
   const [role, setRole] = useState<RoleName>('User');
@@ -99,6 +102,7 @@ export default function UserDetailPage() {
   const [scopeError, setScopeError] = useState<string | null>(null);
 
   const [grantedCodes, setGrantedCodes] = useState<Set<string>>(new Set());
+  const [effectiveCodes, setEffectiveCodes] = useState<Set<string>>(new Set());
   const [isSavingPermissions, setIsSavingPermissions] = useState(false);
   const [permissionsError, setPermissionsError] = useState<string | null>(null);
 
@@ -186,10 +190,14 @@ export default function UserDetailPage() {
     setPermissionsError(null);
     setIsSavingPermissions(true);
     try {
+      // Only what CHANGED relative to the loaded effective set - untouched permissions are left exactly as they are.
       const permissions = permissionCatalogue
-        .filter((p) => p.isGrantable)
+        .filter((p) => p.isGrantable && grantedCodes.has(p.code) !== effectiveCodes.has(p.code))
         .map((p) => ({ code: p.code, isGranted: grantedCodes.has(p.code) }));
-      await apiClient.put(`/api/v1/users/${params.id}/permissions`, { permissions });
+      if (permissions.length > 0) {
+        await apiClient.put(`/api/v1/users/${params.id}/permissions`, { permissions });
+        setEffectiveCodes(new Set(grantedCodes));
+      }
     } catch (caught) {
       setPermissionsError(caught instanceof ApiError ? caught.messageAr : 'تعذر حفظ الصلاحيات');
     } finally {
@@ -237,6 +245,17 @@ export default function UserDetailPage() {
           لا يمكنك تعديل دورك أو نطاقك أو تعطيل حسابك الخاص.
         </div>
       ) : null}
+
+      {canManage && user.role !== 'Owner' ? (
+        <UserProfileCard
+          key={`${user.fullName}|${user.mobileNumber}`}
+          user={user}
+          canEditMobile={profile?.role === 'Owner'}
+          onSaved={load}
+        />
+      ) : null}
+
+      {profile?.role === 'Owner' && !isSelf && user.role !== 'Owner' ? <UserPasswordCard userId={user.id} /> : null}
 
       {canManage ? (
         <Card>

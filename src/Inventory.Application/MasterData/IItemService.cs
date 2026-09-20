@@ -19,6 +19,9 @@ public interface IItemService
     /// `stock_ledger` row exists for this item.</summary>
     Task<MasterDataResult<ItemSummary>> ChangeBaseUnitAsync(Guid id, Guid newBaseUnitId, CancellationToken cancellationToken);
 
+    /// <summary>Hard delete, ONLY for a record never referenced by any transaction; otherwise `MasterDataError.InUse` and nothing changes (deactivate instead).</summary>
+    Task<MasterDataResult<bool>> DeleteAsync(Guid id, CancellationToken cancellationToken);
+
     Task<MasterDataResult<ItemSummary>> DeactivateAsync(Guid id, CancellationToken cancellationToken);
 
     Task<MasterDataResult<ItemSummary>> ReactivateAsync(Guid id, CancellationToken cancellationToken);

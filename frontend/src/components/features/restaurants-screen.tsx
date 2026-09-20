@@ -19,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { DeleteRecordButton } from '@/components/features/delete-record-button';
 import { ErrorBanner } from '@/components/feedback/error-banner';
 import { ForbiddenState } from '@/components/feedback/forbidden-state';
 import { RestaurantWarehousesDialog } from '@/components/features/restaurant-warehouses-dialog';
@@ -140,6 +141,7 @@ export function RestaurantsScreen() {
           >
             {row.original.isActive ? <PowerOff /> : <Power />}
           </Button>
+          <DeleteRecordButton path={`/api/v1/restaurants/${row.original.id}`} name={row.original.nameArabic} onDeleted={refetch} />
         </div>
       ),
     },
@@ -191,6 +193,7 @@ export function RestaurantsScreen() {
               >
                 {row.isActive ? <PowerOff /> : <Power />}
               </Button>
+              <DeleteRecordButton path={`/api/v1/restaurants/${row.id}`} name={row.nameArabic} onDeleted={refetch} />
             </div>
           </div>
         )}

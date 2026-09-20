@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog,
@@ -73,6 +74,10 @@ export default function UsersPage() {
   const [mobileNumber, setMobileNumber] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<RoleName>('User');
+  const [warehouseOptions, setWarehouseOptions] = useState<{ id: string; nameArabic: string }[]>([]);
+  const [restaurantOptions, setRestaurantOptions] = useState<{ id: string; nameArabic: string }[]>([]);
+  const [warehouseIds, setWarehouseIds] = useState<string[]>([]);
+  const [restaurantIds, setRestaurantIds] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -87,6 +92,10 @@ export default function UsersPage() {
     setMobileNumber('');
     setPassword('');
     setRole('User');
+    setWarehouseIds([]);
+    setRestaurantIds([]);
+    apiClient.get<{ id: string; nameArabic: string }[]>('/api/v1/warehouses/names').then(setWarehouseOptions).catch(() => setWarehouseOptions([]));
+    apiClient.get<{ id: string; nameArabic: string }[]>('/api/v1/restaurants/names').then(setRestaurantOptions).catch(() => setRestaurantOptions([]));
     setFormError(null);
     setDialogOpen(true);
   }
@@ -97,7 +106,15 @@ export default function UsersPage() {
     setIsSubmitting(true);
 
     try {
-      await apiClient.post('/api/v1/users', { fullName, mobileNumber, password, role });
+      await apiClient.post('/api/v1/users', {
+        fullName,
+        mobileNumber,
+        password,
+        role,
+        // Scope only applies to the two scoped roles; the server validates tenant + role fit either way.
+        warehouseIds: role === 'WarehouseStaff' ? warehouseIds : undefined,
+        restaurantIds: role === 'RestaurantSupervisor' ? restaurantIds : undefined,
+      });
       setDialogOpen(false);
       load();
     } catch (caught) {
@@ -161,7 +178,7 @@ export default function UsersPage() {
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <form onSubmit={handleSubmit} className="flex max-h-[75vh] flex-col gap-4 overflow-y-auto">
             <DialogHeader>
               <DialogTitle>مستخدم جديد</DialogTitle>
               <DialogDescription>سيستخدم المستخدم رقم الجوال وكلمة المرور لتسجيل الدخول.</DialogDescription>
@@ -199,7 +216,7 @@ export default function UsersPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(Object.keys(ROLE_LABELS) as RoleName[]).map((r) => (
+                  {(Object.keys(ROLE_LABELS) as RoleName[]).filter((r) => r !== 'Owner').map((r) => (
                     <SelectItem key={r} value={r}>
                       {ROLE_LABELS[r]}
                     </SelectItem>
@@ -207,6 +224,40 @@ export default function UsersPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {role === 'WarehouseStaff' ? (
+              <fieldset className="flex flex-col gap-2">
+                <legend className="text-sm font-medium">المخازن المصرح بها</legend>
+                {warehouseOptions.map((warehouse) => (
+                  <label key={warehouse.id} className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={warehouseIds.includes(warehouse.id)}
+                      onCheckedChange={(checked) =>
+                        setWarehouseIds((current) => (checked === true ? [...current, warehouse.id] : current.filter((id) => id !== warehouse.id)))
+                      }
+                    />
+                    {warehouse.nameArabic}
+                  </label>
+                ))}
+              </fieldset>
+            ) : null}
+
+            {role === 'RestaurantSupervisor' ? (
+              <fieldset className="flex flex-col gap-2">
+                <legend className="text-sm font-medium">الفروع المصرح بها</legend>
+                {restaurantOptions.map((restaurant) => (
+                  <label key={restaurant.id} className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={restaurantIds.includes(restaurant.id)}
+                      onCheckedChange={(checked) =>
+                        setRestaurantIds((current) => (checked === true ? [...current, restaurant.id] : current.filter((id) => id !== restaurant.id)))
+                      }
+                    />
+                    {restaurant.nameArabic}
+                  </label>
+                ))}
+              </fieldset>
+            ) : null}
 
             <DialogFooter>
               <Button type="submit" loading={isSubmitting}>

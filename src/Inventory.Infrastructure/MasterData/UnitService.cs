@@ -87,6 +87,14 @@ public sealed class UnitService : IUnitService
             : MasterDataResult.Success(ToSummary(unit));
     }
 
+    public async Task<MasterDataResult<bool>> DeleteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        Unit? entity = await _context.Units.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        return await MasterDataDeletion.DeleteAsync(
+            _context, _auditLogger, entity, id, "UNIT_DELETED", nameof(Unit),
+            $"تم حذف الوحدة: {entity?.NameArabic}", cancellationToken);
+    }
+
     public Task<MasterDataResult<UnitSummary>> DeactivateAsync(Guid id, CancellationToken cancellationToken) =>
         SetActiveAsync(id, active: false, cancellationToken);
 

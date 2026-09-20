@@ -20,6 +20,8 @@ public enum MasterDataError
     SequenceExhausted,
     /// <summary>The warehouse named in an allowed-warehouse set does not exist / is not Active / is not in this company.</summary>
     WarehouseUnavailable,
+    /// <summary>Delete refused: the record is referenced by history (deactivate it instead).</summary>
+    InUse,
     BaseUnitImmutable,
     ConversionNotDefined,
     InvalidConversionFactor,

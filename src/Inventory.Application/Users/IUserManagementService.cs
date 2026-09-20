@@ -47,6 +47,10 @@ public interface IUserManagementService
     /// codes/descriptions/grantability rather than a client-side hardcoded duplicate.</summary>
     /// <summary>Edits name (any manager) and mobile number (Owner only, never an Owner's own or another
     /// Owner's - those go through OTP). Rotates the security stamp when the mobile changes.</summary>
+    /// <summary>The target's EFFECTIVE permission codes (role baseline + explicit grants - explicit denials) -
+    /// the permissions editor must start from this, never from an empty set.</summary>
+    Task<UserManagementResult<IReadOnlyList<string>>> GetEffectivePermissionsAsync(Guid userId, CancellationToken cancellationToken);
+
     Task<UserManagementResult<UserSummary>> UpdateUserAsync(Guid userId, UpdateUserCommand command, CancellationToken cancellationToken);
 
     /// <summary>Owner-only administrative password reset for a NON-Owner user: no current password

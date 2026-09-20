@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   Users,
   Settings,
+  UserCog,
 } from 'lucide-react';
 import type { AppShellNavItem } from '@/components/shell/app-shell';
 import type { RoleName } from './types';
@@ -44,6 +45,7 @@ export function getNavItemsForRole(role: RoleName | null): AppShellNavItem[] {
         { href: '/audit', label: 'الحركات', icon: ShieldCheck },
         { href: '/users', label: 'ادارة المستخدمين', icon: Users },
         { href: '/settings', label: 'إعدادات المنشأة', icon: Settings },
+        { href: '/account', label: 'حسابي', icon: UserCog },
       ];
     case 'Admin':
       return [

@@ -152,6 +152,14 @@ public sealed class RestaurantService : IRestaurantService
         return MasterDataResult.Success(result);
     }
 
+    public async Task<MasterDataResult<bool>> DeleteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        Restaurant? entity = await _context.Restaurants.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        return await MasterDataDeletion.DeleteAsync(
+            _context, _auditLogger, entity, id, "RESTAURANT_DELETED", nameof(Restaurant),
+            $"تم حذف الفرع: {entity?.NameArabic}", cancellationToken);
+    }
+
     public Task<MasterDataResult<RestaurantSummary>> DeactivateAsync(Guid id, CancellationToken cancellationToken) =>
         SetActiveAsync(id, active: false, cancellationToken);
 

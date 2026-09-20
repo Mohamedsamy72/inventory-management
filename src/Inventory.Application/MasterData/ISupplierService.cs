@@ -13,6 +13,9 @@ public interface ISupplierService
 
     Task<MasterDataResult<SupplierSummary>> UpdateAsync(Guid id, UpdateSupplierCommand command, CancellationToken cancellationToken);
 
+    /// <summary>Hard delete, ONLY for a record never referenced by any transaction; otherwise `MasterDataError.InUse` and nothing changes (deactivate instead).</summary>
+    Task<MasterDataResult<bool>> DeleteAsync(Guid id, CancellationToken cancellationToken);
+
     Task<MasterDataResult<SupplierSummary>> DeactivateAsync(Guid id, CancellationToken cancellationToken);
 
     Task<MasterDataResult<SupplierSummary>> ReactivateAsync(Guid id, CancellationToken cancellationToken);

@@ -29,6 +29,7 @@ public static class RestaurantsEndpoints
         // restaurants) - the supply-request form needs it without any restaurants:* permission.
         restaurants.MapGet("/{id:guid}/warehouses", GetAllowedWarehousesAsync).RequireAuthorization();
         restaurants.MapPut("/{id:guid}/warehouses", SetAllowedWarehousesAsync).RequireAuthorization("restaurants:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        restaurants.MapDelete("/{id:guid}", DeleteAsync).RequireAuthorization("restaurants:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         restaurants.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("restaurants:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         restaurants.MapPost("/{id:guid}/reactivate", ReactivateAsync).RequireAuthorization("restaurants:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
 
@@ -92,6 +93,12 @@ public static class RestaurantsEndpoints
     {
         var result = await service.SetAllowedWarehousesAsync(id, request.WarehouseIds, httpContext.RequestAborted);
         return result.Succeeded ? Results.Ok(result.Value) : await MasterDataErrorWriter.WriteErrorAsync(httpContext, result.Error);
+    }
+
+    private static async Task<IResult> DeleteAsync(Guid id, HttpContext httpContext, IRestaurantService service)
+    {
+        var result = await service.DeleteAsync(id, httpContext.RequestAborted);
+        return result.Succeeded ? Results.NoContent() : await MasterDataErrorWriter.WriteErrorAsync(httpContext, result.Error);
     }
 
     private static async Task<IResult> DeactivateAsync(Guid id, HttpContext httpContext, IRestaurantService service)

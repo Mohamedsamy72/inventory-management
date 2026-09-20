@@ -26,6 +26,7 @@ public static class WarehousesEndpoints
         warehouses.MapGet("/names", ListNamesAsync).RequireAuthorization();
         warehouses.MapGet("/{id:guid}", GetAsync).RequireAuthorization("warehouses:manage");
         warehouses.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("warehouses:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        warehouses.MapDelete("/{id:guid}", DeleteAsync).RequireAuthorization("warehouses:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         warehouses.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("warehouses:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         warehouses.MapPost("/{id:guid}/reactivate", ReactivateAsync).RequireAuthorization("warehouses:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
 
@@ -62,6 +63,12 @@ public static class WarehousesEndpoints
         var command = new UpdateWarehouseCommand(request.NameArabic, request.Address, request.Description);
         var result = await service.UpdateAsync(id, command, httpContext.RequestAborted);
         return result.Succeeded ? Results.Ok(result.Value) : await MasterDataErrorWriter.WriteErrorAsync(httpContext, result.Error);
+    }
+
+    private static async Task<IResult> DeleteAsync(Guid id, HttpContext httpContext, IWarehouseService service)
+    {
+        var result = await service.DeleteAsync(id, httpContext.RequestAborted);
+        return result.Succeeded ? Results.NoContent() : await MasterDataErrorWriter.WriteErrorAsync(httpContext, result.Error);
     }
 
     private static async Task<IResult> DeactivateAsync(Guid id, HttpContext httpContext, IWarehouseService service)

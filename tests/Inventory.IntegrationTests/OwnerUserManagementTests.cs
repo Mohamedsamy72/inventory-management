@@ -509,4 +509,26 @@ public sealed class OwnerUserManagementTests : IClassFixture<WebApplicationFacto
         context.Users.Add(new User(other.CompanyId, "dup", user.MobileNumber, "hash-placeholder", "stamp-placeholder"));
         await Assert.ThrowsAsync<DbUpdateException>(() => context.SaveChangesAsync());
     }
+
+    [Fact]
+    public async Task Permissions_Endpoint_Returns_The_Targets_Effective_Codes_To_Owner_Only()
+    {
+        Ctx ctx = await NewOwnerAsync();
+        using HttpResponseMessage created = await CreateUserAsync(ctx.OwnerClient, "WarehouseStaff", extra: new { warehouseIds = new[] { await NewWarehouseAsync(ctx.OwnerClient) }, restaurantIds = (Guid[]?)null });
+        Guid staffId = (await created.Content.ReadFromJsonAsync<IdDto>())!.Id;
+
+        List<string>? codes = await ctx.OwnerClient.GetFromJsonAsync<List<string>>($"/api/v1/users/{staffId}/permissions");
+        Assert.NotNull(codes);
+        Assert.NotEmpty(codes);
+        Assert.DoesNotContain("costs:view", codes);
+        Assert.Equal(HttpStatusCode.NotFound, (await ctx.OwnerClient.GetAsync($"/api/v1/users/{Guid.NewGuid()}/permissions")).StatusCode);
+
+        Ctx other = await NewOwnerAsync();
+        Assert.Equal(HttpStatusCode.NotFound, (await other.OwnerClient.GetAsync($"/api/v1/users/{staffId}/permissions")).StatusCode);
+
+        (User staff, string pw) = await AuthTestHelpers.CreateUserInCompanyAsync(_factory, ctx.CompanyId);
+        await AuthTestHelpers.AssignRoleAsync(_factory, staff.Id, RoleName.WarehouseStaff);
+        using HttpClient staffClient = await AuthTestHelpers.LoginAsAsync(_factory, staff, pw);
+        Assert.Equal(HttpStatusCode.Forbidden, (await staffClient.GetAsync($"/api/v1/users/{staffId}/permissions")).StatusCode);
+    }
 }

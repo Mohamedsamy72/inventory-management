@@ -89,6 +89,14 @@ public sealed class WarehouseService : IWarehouseService
             : MasterDataResult.Success(ToSummary(warehouse));
     }
 
+    public async Task<MasterDataResult<bool>> DeleteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        Warehouse? entity = await _context.Warehouses.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        return await MasterDataDeletion.DeleteAsync(
+            _context, _auditLogger, entity, id, "WAREHOUSE_DELETED", nameof(Warehouse),
+            $"تم حذف المخزن: {entity?.NameArabic}", cancellationToken);
+    }
+
     public Task<MasterDataResult<WarehouseSummary>> DeactivateAsync(Guid id, CancellationToken cancellationToken) =>
         SetActiveAsync(id, active: false, cancellationToken);
 

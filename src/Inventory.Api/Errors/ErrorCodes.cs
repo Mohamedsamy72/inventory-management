@@ -38,6 +38,7 @@ internal static class ErrorCodes
     public const string InvalidScope = "INVALID_SCOPE";
     public const string InvalidName = "INVALID_NAME";
     public const string OwnerOnlyOperation = "OWNER_ONLY_OPERATION";
+    public const string InUse = "IN_USE";
     public const string DuplicateItemName = "DUPLICATE_ITEM_NAME";
 
     /// <summary>New for Phase 5: docs/13's `DUPLICATE_ITEM_NAME` is item-specific by name and by
@@ -90,6 +91,7 @@ internal static class ErrorCodes
         InvalidScope => "نطاق الوصول المحدد غير صالح لهذا الدور أو يحتوي على مخزن/فرع غير موجود.",
         InvalidName => "الاسم مطلوب ويجب ألا يتجاوز 200 حرف.",
         OwnerOnlyOperation => "هذه العملية متاحة للمالك فقط، ولا يمكن تنفيذها على حساب مالك.",
+        InUse => "لا يمكن حذف هذا السجل لأنه مستخدم في عمليات سابقة. يمكنك تعطيله بدلاً من ذلك.",
         DuplicateItemName => "يوجد صنف مسجل مسبقاً بنفس الاسم العربي في المنشأة.",
         DuplicateName => "يوجد سجل مسجل مسبقاً بنفس الاسم أو الرمز في المنشأة.",
         BaseUnitImmutable => "لا يمكن تغيير وحدة القياس الأساسية بعد وجود حركات مخزنية لهذا الصنف.",
@@ -127,6 +129,7 @@ internal static class ErrorCodes
         InvalidScope => "The scope is not valid for this role or references an unknown location.",
         InvalidName => "The name is required and must not exceed 200 characters.",
         OwnerOnlyOperation => "This operation is Owner-only and cannot target an Owner account.",
+        InUse => "This record is referenced by history and cannot be deleted; deactivate it instead.",
         DuplicateItemName => "An item with this Arabic name already exists.",
         DuplicateName => "A record with this name or code already exists.",
         BaseUnitImmutable => "The base unit cannot change once stock ledger entries exist for this item.",

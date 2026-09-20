@@ -21,6 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { DeleteRecordButton } from '@/components/features/delete-record-button';
 import { ErrorBanner } from '@/components/feedback/error-banner';
 import { ForbiddenState } from '@/components/feedback/forbidden-state';
 import { QuickAddModal } from '@/components/features/quick-add-modal';
@@ -182,6 +183,7 @@ export default function ItemsPage() {
             </Button>
           ) : null}
           {canDelete ? (
+            <>
             <Button
               variant="ghost"
               size="icon-sm"
@@ -191,6 +193,8 @@ export default function ItemsPage() {
             >
               {row.original.isActive ? <PowerOff /> : <Power />}
             </Button>
+              <DeleteRecordButton path={`/api/v1/items/${row.original.id}`} name={row.original.nameArabic} onDeleted={refetch} />
+          </>
           ) : null}
         </div>
       ),
@@ -252,6 +256,7 @@ export default function ItemsPage() {
                 </Button>
               ) : null}
               {canDelete ? (
+                <>
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -261,6 +266,8 @@ export default function ItemsPage() {
                 >
                   {row.isActive ? <PowerOff /> : <Power />}
                 </Button>
+                  <DeleteRecordButton path={`/api/v1/items/${row.id}`} name={row.nameArabic} onDeleted={refetch} />
+              </>
               ) : null}
             </div>
           </div>

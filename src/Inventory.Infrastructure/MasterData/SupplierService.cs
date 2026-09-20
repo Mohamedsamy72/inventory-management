@@ -87,6 +87,14 @@ public sealed class SupplierService : ISupplierService
             : MasterDataResult.Success(ToSummary(supplier));
     }
 
+    public async Task<MasterDataResult<bool>> DeleteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        Supplier? entity = await _context.Suppliers.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        return await MasterDataDeletion.DeleteAsync(
+            _context, _auditLogger, entity, id, "SUPPLIER_DELETED", nameof(Supplier),
+            $"تم حذف المورد: {entity?.NameArabic}", cancellationToken);
+    }
+
     public Task<MasterDataResult<SupplierSummary>> DeactivateAsync(Guid id, CancellationToken cancellationToken) =>
         SetActiveAsync(id, active: false, cancellationToken);
 

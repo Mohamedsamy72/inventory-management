@@ -23,6 +23,7 @@ public static class SuppliersEndpoints
         suppliers.MapGet("/names", ListNamesAsync).RequireAuthorization();
         suppliers.MapGet("/{id:guid}", GetAsync).RequireAuthorization("suppliers:manage");
         suppliers.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("suppliers:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        suppliers.MapDelete("/{id:guid}", DeleteAsync).RequireAuthorization("suppliers:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         suppliers.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("suppliers:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         suppliers.MapPost("/{id:guid}/reactivate", ReactivateAsync).RequireAuthorization("suppliers:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
 
@@ -59,6 +60,12 @@ public static class SuppliersEndpoints
         var command = new UpdateSupplierCommand(request.NameArabic, request.Phone, request.ContactPerson, request.Address, request.Notes);
         var result = await service.UpdateAsync(id, command, httpContext.RequestAborted);
         return result.Succeeded ? Results.Ok(result.Value) : await MasterDataErrorWriter.WriteErrorAsync(httpContext, result.Error);
+    }
+
+    private static async Task<IResult> DeleteAsync(Guid id, HttpContext httpContext, ISupplierService service)
+    {
+        var result = await service.DeleteAsync(id, httpContext.RequestAborted);
+        return result.Succeeded ? Results.NoContent() : await MasterDataErrorWriter.WriteErrorAsync(httpContext, result.Error);
     }
 
     private static async Task<IResult> DeactivateAsync(Guid id, HttpContext httpContext, ISupplierService service)

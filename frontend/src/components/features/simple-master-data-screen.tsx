@@ -19,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { DeleteRecordButton } from '@/components/features/delete-record-button';
 import { ErrorBanner } from '@/components/feedback/error-banner';
 import { ForbiddenState } from '@/components/feedback/forbidden-state';
 
@@ -168,6 +169,7 @@ export function SimpleMasterDataScreen<TSummary extends BaseSummary>({
           >
             {row.original.isActive ? <PowerOff /> : <Power />}
           </Button>
+          <DeleteRecordButton path={`${basePath}/${row.original.id}`} name={row.original.nameArabic} onDeleted={refetch} />
         </div>
       ),
     },
@@ -218,6 +220,7 @@ export function SimpleMasterDataScreen<TSummary extends BaseSummary>({
               >
                 {row.isActive ? <PowerOff /> : <Power />}
               </Button>
+              <DeleteRecordButton path={`${basePath}/${row.id}`} name={row.nameArabic} onDeleted={refetch} />
             </div>
           </div>
         )}

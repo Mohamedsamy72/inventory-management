@@ -15,6 +15,9 @@ public interface IWarehouseService
 
     Task<MasterDataResult<WarehouseSummary>> UpdateAsync(Guid id, UpdateWarehouseCommand command, CancellationToken cancellationToken);
 
+    /// <summary>Hard delete, ONLY for a record never referenced by any transaction; otherwise `MasterDataError.InUse` and nothing changes (deactivate instead).</summary>
+    Task<MasterDataResult<bool>> DeleteAsync(Guid id, CancellationToken cancellationToken);
+
     Task<MasterDataResult<WarehouseSummary>> DeactivateAsync(Guid id, CancellationToken cancellationToken);
 
     Task<MasterDataResult<WarehouseSummary>> ReactivateAsync(Guid id, CancellationToken cancellationToken);

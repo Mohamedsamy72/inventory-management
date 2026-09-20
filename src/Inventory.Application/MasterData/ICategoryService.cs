@@ -15,6 +15,9 @@ public interface ICategoryService
 
     Task<MasterDataResult<CategorySummary>> UpdateAsync(Guid id, UpdateCategoryCommand command, CancellationToken cancellationToken);
 
+    /// <summary>Hard delete, ONLY for a record never referenced by any transaction; otherwise `MasterDataError.InUse` and nothing changes (deactivate instead).</summary>
+    Task<MasterDataResult<bool>> DeleteAsync(Guid id, CancellationToken cancellationToken);
+
     Task<MasterDataResult<CategorySummary>> DeactivateAsync(Guid id, CancellationToken cancellationToken);
 
     Task<MasterDataResult<CategorySummary>> ReactivateAsync(Guid id, CancellationToken cancellationToken);

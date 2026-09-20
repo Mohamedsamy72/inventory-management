@@ -23,6 +23,7 @@ public static class UnitsEndpoints
         units.MapGet("/names", ListNamesAsync).RequireAuthorization();
         units.MapGet("/{id:guid}", GetAsync).RequireAuthorization("units:manage");
         units.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("units:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        units.MapDelete("/{id:guid}", DeleteAsync).RequireAuthorization("units:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         units.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("units:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         units.MapPost("/{id:guid}/reactivate", ReactivateAsync).RequireAuthorization("units:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
 
@@ -57,6 +58,12 @@ public static class UnitsEndpoints
     {
         var result = await service.UpdateAsync(id, new UpdateUnitCommand(request.NameArabic, request.Abbreviation), httpContext.RequestAborted);
         return result.Succeeded ? Results.Ok(result.Value) : await MasterDataErrorWriter.WriteErrorAsync(httpContext, result.Error);
+    }
+
+    private static async Task<IResult> DeleteAsync(Guid id, HttpContext httpContext, IUnitService service)
+    {
+        var result = await service.DeleteAsync(id, httpContext.RequestAborted);
+        return result.Succeeded ? Results.NoContent() : await MasterDataErrorWriter.WriteErrorAsync(httpContext, result.Error);
     }
 
     private static async Task<IResult> DeactivateAsync(Guid id, HttpContext httpContext, IUnitService service)

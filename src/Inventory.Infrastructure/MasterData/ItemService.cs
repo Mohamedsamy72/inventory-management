@@ -186,6 +186,14 @@ public sealed class ItemService : IItemService
         return MasterDataResult.Success(ToSummary(item) with { BaseUnitId = newBaseUnitId });
     }
 
+    public async Task<MasterDataResult<bool>> DeleteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        Item? entity = await _context.Items.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        return await MasterDataDeletion.DeleteAsync(
+            _context, _auditLogger, entity, id, "ITEM_DELETED", nameof(Item),
+            $"تم حذف الصنف: {entity?.NameArabic}", cancellationToken);
+    }
+
     public Task<MasterDataResult<ItemSummary>> DeactivateAsync(Guid id, CancellationToken cancellationToken) =>
         SetActiveAsync(id, active: false, cancellationToken);
 

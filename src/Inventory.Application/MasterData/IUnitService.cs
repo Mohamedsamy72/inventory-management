@@ -13,6 +13,9 @@ public interface IUnitService
 
     Task<MasterDataResult<UnitSummary>> UpdateAsync(Guid id, UpdateUnitCommand command, CancellationToken cancellationToken);
 
+    /// <summary>Hard delete, ONLY for a record never referenced by any transaction; otherwise `MasterDataError.InUse` and nothing changes (deactivate instead).</summary>
+    Task<MasterDataResult<bool>> DeleteAsync(Guid id, CancellationToken cancellationToken);
+
     Task<MasterDataResult<UnitSummary>> DeactivateAsync(Guid id, CancellationToken cancellationToken);
 
     Task<MasterDataResult<UnitSummary>> ReactivateAsync(Guid id, CancellationToken cancellationToken);

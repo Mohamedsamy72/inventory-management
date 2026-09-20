@@ -32,6 +32,7 @@ public static class UsersEndpoints
         users.MapPut("/{id:guid}/role", ChangeRoleAsync).RequireAuthorization("users:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         users.MapGet("/{id:guid}/scope", GetScopeAsync).RequireAuthorization("users:scope");
         users.MapPut("/{id:guid}/scope", SetScopeAsync).RequireAuthorization("users:scope").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        users.MapGet("/{id:guid}/permissions", GetPermissionsAsync).RequireAuthorization("users:manage");
         users.MapPut("/{id:guid}/permissions", SetPermissionsAsync).RequireAuthorization("users:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         users.MapPost("/{id:guid}/deactivate", DeactivateAsync).RequireAuthorization("users:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         users.MapPost("/{id:guid}/reactivate", ReactivateAsync).RequireAuthorization("users:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
@@ -116,6 +117,12 @@ public static class UsersEndpoints
 
     private static async Task<IResult> ListPermissionCatalogueAsync(HttpContext httpContext, IUserManagementService service) =>
         Results.Ok(await service.ListPermissionCatalogueAsync(httpContext.RequestAborted));
+
+    private static async Task<IResult> GetPermissionsAsync(Guid id, HttpContext httpContext, IUserManagementService service)
+    {
+        UserManagementResult<IReadOnlyList<string>> result = await service.GetEffectivePermissionsAsync(id, httpContext.RequestAborted);
+        return result.Succeeded ? Results.Ok(result.Value) : await WriteErrorAsync(httpContext, result.Error);
+    }
 
     private static async Task<IResult> SetPermissionsAsync(
         Guid id, SetUserPermissionsRequest request, HttpContext httpContext, IUserManagementService service)

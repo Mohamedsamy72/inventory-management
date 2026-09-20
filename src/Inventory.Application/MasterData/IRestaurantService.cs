@@ -24,6 +24,9 @@ public interface IRestaurantService
     /// company, else <see cref="MasterDataError.WarehouseUnavailable"/> and nothing changes.</summary>
     Task<MasterDataResult<IReadOnlyList<AllowedWarehouse>>> SetAllowedWarehousesAsync(Guid restaurantId, IReadOnlyList<Guid> warehouseIds, CancellationToken cancellationToken);
 
+    /// <summary>Hard delete, ONLY for a record never referenced by any transaction; otherwise `MasterDataError.InUse` and nothing changes (deactivate instead).</summary>
+    Task<MasterDataResult<bool>> DeleteAsync(Guid id, CancellationToken cancellationToken);
+
     Task<MasterDataResult<RestaurantSummary>> DeactivateAsync(Guid id, CancellationToken cancellationToken);
 
     Task<MasterDataResult<RestaurantSummary>> ReactivateAsync(Guid id, CancellationToken cancellationToken);

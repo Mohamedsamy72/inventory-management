@@ -21,6 +21,7 @@ internal static class MasterDataErrorWriter
             MasterDataError.GeneratedFieldNotAccepted => (StatusCodes.Status400BadRequest, ErrorCodes.GeneratedFieldNotAccepted),
             MasterDataError.SequenceExhausted => (StatusCodes.Status409Conflict, ErrorCodes.SequenceExhausted),
             MasterDataError.WarehouseUnavailable => (StatusCodes.Status409Conflict, ErrorCodes.WarehouseUnavailable),
+            MasterDataError.InUse => (StatusCodes.Status409Conflict, ErrorCodes.InUse),
             MasterDataError.BaseUnitImmutable => (StatusCodes.Status409Conflict, ErrorCodes.BaseUnitImmutable),
             MasterDataError.ConversionNotDefined => (StatusCodes.Status409Conflict, ErrorCodes.ConversionNotDefined),
             MasterDataError.InvalidConversionFactor => (StatusCodes.Status400BadRequest, ErrorCodes.InvalidConversionFactor),

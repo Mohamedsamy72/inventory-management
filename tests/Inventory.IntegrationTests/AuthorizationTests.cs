@@ -478,6 +478,7 @@ public sealed class AuthorizationTests : IClassFixture<WebApplicationFactory<Pro
     {
         (Company company, User owner, string ownerPassword) = await SeedCompanyWithOwnerAsync();
         (User target, _) = await AuthTestHelpers.CreateUserInCompanyAsync(_factory, company.Id);
+        await AuthTestHelpers.AssignRoleAsync(_factory, target.Id, RoleName.WarehouseStaff);
 
         using IServiceScope scope = _factory.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();

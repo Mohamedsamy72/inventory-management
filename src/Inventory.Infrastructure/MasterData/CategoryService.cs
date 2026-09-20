@@ -87,6 +87,14 @@ public sealed class CategoryService : ICategoryService
             : MasterDataResult.Success(ToSummary(category));
     }
 
+    public async Task<MasterDataResult<bool>> DeleteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        Category? entity = await _context.Categories.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        return await MasterDataDeletion.DeleteAsync(
+            _context, _auditLogger, entity, id, "CATEGORY_DELETED", nameof(Category),
+            $"تم حذف القسم: {entity?.NameArabic}", cancellationToken);
+    }
+
     public Task<MasterDataResult<CategorySummary>> DeactivateAsync(Guid id, CancellationToken cancellationToken) =>
         SetActiveAsync(id, active: false, cancellationToken);
 

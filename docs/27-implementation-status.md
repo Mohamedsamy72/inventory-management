@@ -1229,3 +1229,39 @@ Inspection first; only gaps were changed. **Already implemented and left untouch
 
 **Tests:** backend 206 integration + 27 unit + 19 architecture; only `IdempotencyServiceTests.Cleanup_Removes_Only_Expired_Records` (pre-existing timing flake) can fail under parallel load. New: `RestaurantWarehouseTests` (allowed/denied/inactive/cross-company/role/scope/DB-level FK), 3 direct-issue unit-conversion tests; browser: `allowed-warehouses-and-units.spec.ts` plus all earlier specs re-run green.
 
+
+---
+
+## 35. User Management Completion + Master-Data Lifecycle (2026-09-20)
+
+### 35.1 Owner user management (DB → Domain → App → Infra → API → Auth → UI → tests)
+- **Creation** (`POST /users`, `users:manage`): role validated server-side (`Enum.IsDefined` + role row; Accountant/unknown → `INVALID_ROLE`; Owner not creatable), name, mobile (10–15 digits, normalized), scope by role (Warehouse Staff → warehouse ids; Restaurant Supervisor → restaurant ids; Admin/User → none) applied in the same transaction; client-sent company/permissions are ignored; audited.
+- **Global mobile uniqueness** — decision: login resolves the mobile across companies, so uniqueness is global: DB unique index `uq_users_mobile` (migration `AddGlobalUniqueMobile`) + service pre-check → `DUPLICATE_MOBILE`. Mobile is an identifier only, never an authorization input.
+- **Admin password reset** (`POST /users/{id}/password`, Owner only, target non-Owner, never self): Identity password policy, sessions revoked (security-stamp rotation), audited as `USER_PASSWORD_RESET_BY_ADMIN` **without** any secret; response is 204 (nothing echoed). Admin gets 403.
+- **Owner's own credentials** (`/api/v1/account/*`, Owner only): password change = OTP to the currently registered mobile → verify → new password + confirm; mobile change = OTP sent to the NEW number, becomes active only after verification (time-limited Data-Protection token, 10 min). Owner forgot-password uses the normal OTP flow. Audited `OWNER_PASSWORD_CHANGED_WITH_OTP` / `OWNER_MOBILE_CHANGED_WITH_OTP`. No production mobile number is hard-coded anywhere.
+- **Profile edit** (`PUT /users/{id}`): name for any manageable user; mobile change Owner-only; Owner target refused. **Permissions**: `GET /users/{id}/permissions` (effective codes) feeds the editor, which now sends only changed grantable codes.
+- UI: `/users` create dialog with scope pickers, `/users/[id]` profile + password + permission cards, Owner-only `/account`.
+
+### 35.2 Lifecycle matrix (decision record)
+| Entity | Lifecycle | DELETE endpoint | Deactivate/Archive | Who | Frontend | Audit | Hard-delete safe? |
+|---|---|---|---|---|---|---|---|
+| Items | Active/Inactive | Yes — only if never referenced | Yes | `items:*` policy (Owner/Admin) | trash + confirm; power toggle | `ITEM_DELETED` / deactivate | Only when unreferenced (FK 23503 → 409 `IN_USE`) |
+| Categories, Units, Suppliers | Active/Inactive | Yes — unreferenced only | Yes | Owner/Admin | trash + confirm | `*_DELETED` | Only when unreferenced |
+| Warehouses | Active/Inactive | Yes — unreferenced only (no ledger, docs, mappings-to-requests) | Yes | Owner/Admin | trash + confirm | `WAREHOUSE_DELETED` | Only when unreferenced |
+| Restaurants | Active/Inactive | Yes — unreferenced only (its allowed-warehouse mapping cascades) | Yes | Owner/Admin | trash + confirm | `RESTAURANT_DELETED` | Only when unreferenced |
+| Users | Active/Inactive | **No** (identity anchors audit + documents) | Yes (sessions revoked) | Owner/Admin per rules | power toggle | yes | Never |
+| Supply requests | state machine | No | Cancel (Supervisor) | scoped | cancel | yes | Never |
+| Receiving orders, Supplies | state machine | No | Cancel / Reverse | permission-gated | existing actions | yes | Never (ledger references) |
+| Stock counts, Discrepancies | state machine | No | Void/resolve via workflow | permission-gated | existing | yes | Never |
+| Ledger, Audit log | append-only | No | — | — | — | — | Never |
+
+Every delete: permission policy + antiforgery filter; tenant filter makes cross-company ids 404; explicit UI confirmation; FK violation is the authority for "referenced" (409 `IN_USE`, Arabic message steering to deactivation, nothing removed); creation audit rows survive. **Not implemented (needs product decision):** discarding a draft receiving order, cancelling a stock count.
+
+### 35.3 Verification
+Backend: `OwnerUserManagementTests` (32) and `MasterDataLifecycleTests` (9: unused delete + audit + history, referenced → 409 intact, 403 for Staff/Supervisor/User, Admin allowed, cross-company/unknown 404, CSRF). Frontend typecheck/lint clean.
+
+### 35.4 Questions for Mohamed
+1. No production SMS provider exists (`ConsoleSmsSender` only) — OTP flows work end-to-end in dev/tests but real delivery needs a provider decision.
+2. May the Owner create another Owner? Currently no.
+3. For the Owner's mobile change, OTP goes to the NEW number only; should the current number also be verified?
+4. Draft receiving-order discard and stock-count cancel: implement?

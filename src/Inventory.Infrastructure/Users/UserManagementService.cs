@@ -410,6 +410,17 @@ public sealed class UserManagementService : IUserManagementService
         return UserManagementResult.Success(new UserSummary(user.Id, user.FullName, user.MobileNumber, role, user.IsActive));
     }
 
+    public async Task<UserManagementResult<IReadOnlyList<string>>> GetEffectivePermissionsAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        if (!await _context.Users.AsNoTracking().AnyAsync(u => u.Id == userId, cancellationToken))
+        {
+            return UserManagementResult.Failure<IReadOnlyList<string>>(UserManagementError.NotFound);
+        }
+
+        IReadOnlySet<string> effective = await _permissionEvaluator.GetEffectivePermissionsAsync(userId, cancellationToken);
+        return UserManagementResult.Success<IReadOnlyList<string>>(effective.OrderBy(c => c, StringComparer.Ordinal).ToList());
+    }
+
     public async Task<UserManagementResult<UserSummary>> UpdateUserAsync(Guid userId, UpdateUserCommand command, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(command);
