@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from 'react';
 import type { CellContext, ColumnDef } from '@tanstack/react-table';
-import { Plus, Pencil, Power, PowerOff } from 'lucide-react';
+import { Plus, Pencil, Power, PowerOff, Warehouse as WarehouseIcon } from 'lucide-react';
 import { useSession } from '@/lib/auth/session-context';
 import { useKeysetList } from '@/lib/use-keyset-list';
 import { apiClient, ApiError } from '@/lib/api-client';
@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import { ErrorBanner } from '@/components/feedback/error-banner';
 import { ForbiddenState } from '@/components/feedback/forbidden-state';
+import { RestaurantWarehousesDialog } from '@/components/features/restaurant-warehouses-dialog';
 
 interface RestaurantSummary {
   id: string;
@@ -53,6 +54,7 @@ export function RestaurantsScreen() {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [warehousesFor, setWarehousesFor] = useState<RestaurantSummary | null>(null);
 
   if (profile && !profile.permissionCodes.includes('restaurants:manage')) {
     return <ForbiddenState reason="forbidden" />;
@@ -126,6 +128,9 @@ export function RestaurantsScreen() {
           <Button variant="ghost" size="icon-sm" onClick={() => openEdit(row.original)} aria-label="تعديل">
             <Pencil />
           </Button>
+          <Button variant="ghost" size="icon-sm" onClick={() => setWarehousesFor(row.original)} aria-label="المخازن المسموح بها">
+            <WarehouseIcon />
+          </Button>
           <Button
             variant="ghost"
             size="icon-sm"
@@ -174,6 +179,9 @@ export function RestaurantsScreen() {
               <Button variant="ghost" size="icon-sm" onClick={() => openEdit(row)} aria-label="تعديل">
                 <Pencil />
               </Button>
+              <Button variant="ghost" size="icon-sm" onClick={() => setWarehousesFor(row)} aria-label="المخازن المسموح بها">
+                <WarehouseIcon />
+              </Button>
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -187,6 +195,8 @@ export function RestaurantsScreen() {
           </div>
         )}
       />
+
+      <RestaurantWarehousesDialog restaurant={warehousesFor} onClose={() => setWarehousesFor(null)} />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>

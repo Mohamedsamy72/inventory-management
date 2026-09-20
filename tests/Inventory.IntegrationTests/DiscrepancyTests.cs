@@ -57,6 +57,7 @@ public sealed class DiscrepancyTests : IClassFixture<WebApplicationFactory<Progr
         using HttpResponseMessage restaurantResponse = await AuthTestHelpers.PostJsonAsync(
             client, "/api/v1/restaurants", new { nameArabic = "فرع", code = "BR-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
         var restaurant = await restaurantResponse.Content.ReadFromJsonAsync<IdDto>();
+        await AuthTestHelpers.AllowWarehouseAsync(client, restaurant!.Id, warehouse!.Id);
 
         using HttpResponseMessage categoryResponse = await AuthTestHelpers.PostJsonAsync(
             client, "/api/v1/categories", new { nameArabic = "قسم " + Guid.NewGuid().ToString("N")[..6], description = (string?)null });

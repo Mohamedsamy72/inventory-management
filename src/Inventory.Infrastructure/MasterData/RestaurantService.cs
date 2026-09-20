@@ -91,6 +91,67 @@ public sealed class RestaurantService : IRestaurantService
             : MasterDataResult.Success(ToSummary(restaurant));
     }
 
+    public async Task<IReadOnlyList<AllowedWarehouse>?> GetAllowedWarehousesAsync(Guid restaurantId, CancellationToken cancellationToken)
+    {
+        if (!await _context.Restaurants.AsNoTracking().AnyAsync(r => r.Id == restaurantId, cancellationToken))
+        {
+            return null;
+        }
+
+        List<Guid> mappedIds = await _context.RestaurantWarehouses.AsNoTracking()
+            .Where(m => m.RestaurantId == restaurantId).Select(m => m.WarehouseId).ToListAsync(cancellationToken);
+
+        List<Warehouse> warehouses = await _context.Warehouses.AsNoTracking()
+            .Where(w => mappedIds.Contains(w.Id) && w.Status == WarehouseStatus.Active)
+            .OrderBy(w => w.NameArabic)
+            .ToListAsync(cancellationToken);
+
+        return warehouses.Select(w => new AllowedWarehouse(w.Id, w.NameArabic, w.Code)).ToList();
+    }
+
+    public async Task<MasterDataResult<IReadOnlyList<AllowedWarehouse>>> SetAllowedWarehousesAsync(
+        Guid restaurantId, IReadOnlyList<Guid> warehouseIds, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(warehouseIds);
+
+        Restaurant? restaurant = await _context.Restaurants.AsNoTracking().FirstOrDefaultAsync(r => r.Id == restaurantId, cancellationToken);
+        if (restaurant is null)
+        {
+            return MasterDataResult.Failure<IReadOnlyList<AllowedWarehouse>>(MasterDataError.NotFound);
+        }
+
+        List<Guid> requested = warehouseIds.Distinct().ToList();
+
+        // The tenant query filter on Warehouses makes another company's id indistinguishable from
+        // a nonexistent one - both fail closed here.
+        int valid = await _context.Warehouses.AsNoTracking()
+            .CountAsync(w => requested.Contains(w.Id) && w.Status == WarehouseStatus.Active, cancellationToken);
+        if (valid != requested.Count)
+        {
+            return MasterDataResult.Failure<IReadOnlyList<AllowedWarehouse>>(MasterDataError.WarehouseUnavailable);
+        }
+
+        List<RestaurantWarehouse> existing = await _context.RestaurantWarehouses
+            .Where(m => m.RestaurantId == restaurantId).ToListAsync(cancellationToken);
+
+        _context.RestaurantWarehouses.RemoveRange(existing.Where(m => !requested.Contains(m.WarehouseId)));
+        foreach (Guid warehouseId in requested.Where(id => existing.All(m => m.WarehouseId != id)))
+        {
+            _context.RestaurantWarehouses.Add(new RestaurantWarehouse(_currentUserService.CompanyId, restaurantId, warehouseId));
+        }
+
+        _auditLogger.Record(new AuditEntry(
+            "RESTAURANT_ALLOWED_WAREHOUSES_CHANGED", nameof(Restaurant), restaurantId,
+            $"تم تعديل المخازن المسموح بها للفرع: {restaurant.NameArabic}",
+            OldValues: new { WarehouseIds = existing.Select(m => m.WarehouseId) }, NewValues: new { WarehouseIds = requested }, Domain.Enums.AuditResult.Success,
+            RestaurantId: restaurantId));
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        IReadOnlyList<AllowedWarehouse> result = (await GetAllowedWarehousesAsync(restaurantId, cancellationToken))!;
+        return MasterDataResult.Success(result);
+    }
+
     public Task<MasterDataResult<RestaurantSummary>> DeactivateAsync(Guid id, CancellationToken cancellationToken) =>
         SetActiveAsync(id, active: false, cancellationToken);
 

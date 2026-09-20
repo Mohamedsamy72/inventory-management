@@ -18,6 +18,8 @@ public enum MasterDataError
 
     GeneratedFieldNotAccepted,
     SequenceExhausted,
+    /// <summary>The warehouse named in an allowed-warehouse set does not exist / is not Active / is not in this company.</summary>
+    WarehouseUnavailable,
     BaseUnitImmutable,
     ConversionNotDefined,
     InvalidConversionFactor,

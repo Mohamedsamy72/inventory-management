@@ -31,6 +31,7 @@ public sealed class InventoryDbContext : DbContext
     public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
     public DbSet<UserPermission> UserPermissions => Set<UserPermission>();
     public DbSet<UserWarehouseScope> UserWarehouseScopes => Set<UserWarehouseScope>();
+    public DbSet<RestaurantWarehouse> RestaurantWarehouses => Set<RestaurantWarehouse>();
     public DbSet<UserRestaurantScope> UserRestaurantScopes => Set<UserRestaurantScope>();
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<Unit> Units => Set<Unit>();

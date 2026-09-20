@@ -102,6 +102,17 @@ internal static class AuthTestHelpers
 
     /// <summary>Same as <see cref="PostJsonAsync"/> for an arbitrary HTTP method - the task 4.14
     /// user-management endpoints are PUT, not POST.</summary>
+    /// <summary>Owner/Admin allows a restaurant to request from the given warehouses (the
+    /// restaurant_warehouses mapping every supply request is now validated against).</summary>
+    public static async Task AllowWarehouseAsync(HttpClient ownerClient, Guid restaurantId, params Guid[] warehouseIds)
+    {
+        using HttpResponseMessage response = await SendJsonAsync(ownerClient, HttpMethod.Put, $"/api/v1/restaurants/{restaurantId}/warehouses", new { warehouseIds });
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"AllowWarehouseAsync failed: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync()}");
+        }
+    }
+
     public static async Task<HttpResponseMessage> SendJsonAsync(HttpClient client, HttpMethod method, string url, object payload)
     {
         using HttpResponseMessage tokenResponse = await client.GetAsync("/api/v1/auth/csrf-token");

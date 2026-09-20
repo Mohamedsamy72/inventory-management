@@ -28,7 +28,13 @@ interface ItemOption extends NamedOption {
 
 interface IssueLine {
   itemId: string;
+  unitId: string;
   quantity: string;
+}
+
+interface ConversionSummary {
+  fromUnitId: string;
+  isActive: boolean;
 }
 
 export interface DirectIssueDialogProps {
@@ -42,8 +48,8 @@ export interface DirectIssueDialogProps {
 /**
  * Change 4 - "أمر صرف": Owner/Admin issue stock straight to a restaurant. One POST to
  * `/api/v1/supplies/direct-issue` (a single atomic backend transaction) - deliberately NOT a
- * browser-side chain of request/fulfil/dispatch/confirm calls. Quantities are entered in each
- * item's base unit; the server re-derives everything else (company, base quantity, stock check)
+ * browser-side chain of request/fulfil/dispatch/confirm calls. Each line's unit is the
+ * item's base unit or a DEFINED conversion unit; the server re-derives everything else (company, base quantity, stock check)
  * and rejects insufficient stock with the standard Arabic error, shown verbatim below. The
  * idempotency key is generated once per dialog session so a double-click cannot deduct twice.
  */
@@ -52,7 +58,8 @@ export function DirectIssueDialog({ open, onOpenChange, warehouses, restaurants,
   const [units, setUnits] = useState<NamedOption[]>([]);
   const [warehouseId, setWarehouseId] = useState('');
   const [restaurantId, setRestaurantId] = useState('');
-  const [lines, setLines] = useState<IssueLine[]>([{ itemId: '', quantity: '' }]);
+  const [lines, setLines] = useState<IssueLine[]>([{ itemId: '', unitId: '', quantity: '' }]);
+  const [unitOptions, setUnitOptions] = useState<Record<string, NamedOption[]>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
@@ -63,16 +70,34 @@ export function DirectIssueDialog({ open, onOpenChange, warehouses, restaurants,
     }
     setWarehouseId('');
     setRestaurantId('');
-    setLines([{ itemId: '', quantity: '' }]);
+    setLines([{ itemId: '', unitId: '', quantity: '' }]);
+    setUnitOptions({});
     setFormError(null);
     setIdempotencyKey(crypto.randomUUID());
     apiClient.get<{ items: ItemOption[] }>('/api/v1/items?limit=200').then((page) => setItems(page.items)).catch(() => setItems([]));
     apiClient.get<NamedOption[]>('/api/v1/units/names').then(setUnits).catch(() => setUnits([]));
   }, [open]);
 
-  function unitNameFor(itemId: string): string {
+  // Selectable units = the item's base unit + every ACTIVE defined conversion (same rule as the
+  // receiving editor). No free-form factor exists anywhere: the server resolves the conversion
+  // from the stored definitions and rejects an undefined one (CONVERSION_NOT_DEFINED).
+  async function handleItemChange(index: number, itemId: string) {
     const item = items.find((candidate) => candidate.id === itemId);
-    return units.find((unit) => unit.id === item?.baseUnitId)?.nameArabic ?? '';
+    if (!item) {
+      return;
+    }
+    setLines((current) => current.map((line, i) => (i === index ? { ...line, itemId, unitId: item.baseUnitId } : line)));
+    let fromUnitIds: string[] = [];
+    try {
+      const conversions = await apiClient.get<ConversionSummary[]>(`/api/v1/items/${itemId}/conversions`);
+      fromUnitIds = conversions.filter((conversion) => conversion.isActive).map((conversion) => conversion.fromUnitId);
+    } catch {
+      fromUnitIds = [];
+    }
+    const options = [item.baseUnitId, ...fromUnitIds]
+      .map((id) => units.find((unit) => unit.id === id))
+      .filter((unit): unit is NamedOption => Boolean(unit));
+    setUnitOptions((current) => ({ ...current, [itemId]: options }));
   }
 
   function updateLine(index: number, patch: Partial<IssueLine>) {
@@ -83,7 +108,7 @@ export function DirectIssueDialog({ open, onOpenChange, warehouses, restaurants,
     Boolean(warehouseId) &&
     Boolean(restaurantId) &&
     lines.length > 0 &&
-    lines.every((line) => line.itemId && Number(line.quantity) > 0);
+    lines.every((line) => line.itemId && line.unitId && Number(line.quantity) > 0);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -97,7 +122,7 @@ export function DirectIssueDialog({ open, onOpenChange, warehouses, restaurants,
         restaurantId,
         lines: lines.map((line) => ({
           itemId: line.itemId,
-          unitId: items.find((item) => item.id === line.itemId)!.baseUnitId,
+          unitId: line.unitId,
           quantity: Number(line.quantity),
         })),
       };
@@ -167,7 +192,7 @@ export function DirectIssueDialog({ open, onOpenChange, warehouses, restaurants,
             {lines.map((line, index) => (
               <div key={index} className="flex items-end gap-2">
                 <div className="min-w-0 flex-1">
-                  <Select value={line.itemId} onValueChange={(value) => value && updateLine(index, { itemId: value })}>
+                  <Select value={line.itemId} onValueChange={(value) => value && void handleItemChange(index, value)}>
                     <SelectTrigger className="w-full" aria-label={`الصنف ${index + 1}`}>
                       <SelectValue placeholder="اختر صنفاً" />
                     </SelectTrigger>
@@ -180,6 +205,18 @@ export function DirectIssueDialog({ open, onOpenChange, warehouses, restaurants,
                     </SelectContent>
                   </Select>
                 </div>
+                <Select value={line.unitId} onValueChange={(value) => value && updateLine(index, { unitId: value })} disabled={!line.itemId}>
+                  <SelectTrigger className="w-32" aria-label={`الوحدة ${index + 1}`}>
+                    <SelectValue placeholder="الوحدة" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(unitOptions[line.itemId] ?? []).map((unit) => (
+                      <SelectItem key={unit.id} value={unit.id}>
+                        {unit.nameArabic}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Input
                   type="number"
                   min="0.0001"
@@ -187,7 +224,7 @@ export function DirectIssueDialog({ open, onOpenChange, warehouses, restaurants,
                   dir="ltr"
                   className="w-28"
                   aria-label={`الكمية ${index + 1}`}
-                  placeholder={unitNameFor(line.itemId) || 'الكمية'}
+                  placeholder="الكمية"
                   value={line.quantity}
                   onChange={(event) => updateLine(index, { quantity: event.target.value })}
                 />
@@ -204,7 +241,7 @@ export function DirectIssueDialog({ open, onOpenChange, warehouses, restaurants,
                 ) : null}
               </div>
             ))}
-            <Button type="button" variant="outline" onClick={() => setLines((current) => [...current, { itemId: '', quantity: '' }])} className="self-start">
+            <Button type="button" variant="outline" onClick={() => setLines((current) => [...current, { itemId: '', unitId: '', quantity: '' }])} className="self-start">
               <Plus />
               إضافة صنف
             </Button>

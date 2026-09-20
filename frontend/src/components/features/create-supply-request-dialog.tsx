@@ -31,14 +31,15 @@ export interface CreateSupplyRequestDialogProps {
  * requests list so the CTA opens creation DIRECTLY (no intermediate navigation to the list).
  * Creates the Draft (restaurant + warehouse, both validated server-side), then continues to the
  * request editor where items/quantities are added and the request-review confirmation appears
- * before submission. Change 1 (reversed ADR-028): the warehouse is chosen per request; every
- * active company warehouse is offered since Restaurant Supervisor has no warehouse scope.
+ * before submission. The warehouse is chosen per request from those Owner/Admin explicitly allowed for
+ * the restaurant (restaurant_warehouses); the server re-validates it (allowed, Active, same company).
  */
 export function CreateSupplyRequestDialog({ open, onOpenChange }: CreateSupplyRequestDialogProps) {
   const router = useRouter();
   const { profile } = useSession();
   const [restaurants, setRestaurants] = useState<NamedOption[]>([]);
   const [warehouses, setWarehouses] = useState<NamedOption[]>([]);
+  const [warehousesLoaded, setWarehousesLoaded] = useState(false);
   const [restaurantId, setRestaurantId] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
@@ -53,7 +54,6 @@ export function CreateSupplyRequestDialog({ open, onOpenChange }: CreateSupplyRe
     setFormError(null);
     // "/names" endpoints: Restaurant Supervisor holds no restaurants:/warehouses:manage.
     apiClient.get<NamedOption[]>('/api/v1/restaurants/names').then(setRestaurants).catch(() => setRestaurants([]));
-    apiClient.get<NamedOption[]>('/api/v1/warehouses/names').then(setWarehouses).catch(() => setWarehouses([]));
   }, [open]);
 
   const scopedRestaurants = restaurants.filter((restaurant) => profile?.restaurantScopeIds.includes(restaurant.id));
@@ -64,6 +64,22 @@ export function CreateSupplyRequestDialog({ open, onOpenChange }: CreateSupplyRe
       setRestaurantId(scopedRestaurants[0]!.id);
     }
   }, [open, restaurantId, scopedRestaurants]);
+
+  useEffect(() => {
+    // Only the warehouses Owner/Admin explicitly allowed for the chosen restaurant (server-side
+    // list, already Active-only). Re-fetched whenever the restaurant changes.
+    setWarehouseId('');
+    setWarehouses([]);
+    setWarehousesLoaded(false);
+    if (!open || !restaurantId) {
+      return;
+    }
+    apiClient
+      .get<NamedOption[]>(`/api/v1/restaurants/${restaurantId}/warehouses`)
+      .then(setWarehouses)
+      .catch(() => setWarehouses([]))
+      .finally(() => setWarehousesLoaded(true));
+  }, [open, restaurantId]);
 
   async function handleCreate() {
     setFormError(null);
@@ -85,7 +101,7 @@ export function CreateSupplyRequestDialog({ open, onOpenChange }: CreateSupplyRe
         <div className="flex flex-col gap-4">
           <DialogHeader>
             <DialogTitle>طلب بضاعة جديد</DialogTitle>
-            <DialogDescription>اختر المخزن الذي تريد طلب البضاعة منه، ثم أضف الأصناف والكميات المطلوبة.</DialogDescription>
+            <DialogDescription>اختر أحد المخازن المسموح بها لفرعك، ثم أضف الأصناف والكميات المطلوبة.</DialogDescription>
           </DialogHeader>
 
           {formError ? <ErrorBanner message={formError} /> : null}
@@ -103,6 +119,12 @@ export function CreateSupplyRequestDialog({ open, onOpenChange }: CreateSupplyRe
                 ))}
               </SelectContent>
             </Select>
+          ) : null}
+
+          {restaurantId && warehousesLoaded && warehouses.length === 0 ? (
+            <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+              لا توجد مخازن مسموح بها لهذا الفرع. يرجى مراجعة الإدارة.
+            </p>
           ) : null}
 
           <Select value={warehouseId} onValueChange={(value) => value && setWarehouseId(value)} required>

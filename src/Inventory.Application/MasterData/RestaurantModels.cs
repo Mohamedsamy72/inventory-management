@@ -7,3 +7,5 @@ public sealed record UpdateRestaurantCommand(string NameArabic, string? Address,
 public sealed record RestaurantSummary(
     Guid Id, string NameArabic, string Code, bool IsActive,
     string? Address, string? Description, DateTimeOffset CreatedAt);
+
+public sealed record AllowedWarehouse(Guid Id, string NameArabic, string Code);

@@ -1219,3 +1219,13 @@ Inspection first; only gaps were changed. **Already implemented and left untouch
 
 **Decision needed from Mohamed:** should Warehouse Staff be able to *reject* a submitted request (new terminal status + reason + `supply_requests:fulfill`-gated endpoint), or is Supervisor-side cancellation enough?
 
+---
+
+## 34. Decisions applied to §32.3 (2026-09-20)
+
+1. **Allowed warehouses - implemented.** New table `restaurant_warehouses` (migration `AddRestaurantWarehouses`; composite tenant FKs to `restaurants` and `warehouses`, unique `(restaurant_id, warehouse_id)`; existing (restaurant, warehouse) pairs already used by supply requests were backfilled so current behaviour is preserved). `PUT /api/v1/restaurants/{id}/warehouses` (`restaurants:manage`, Owner/Admin) replaces the set - every id must be an Active warehouse of the caller's company, else `409 WAREHOUSE_UNAVAILABLE`; changes are audited (`RESTAURANT_ALLOWED_WAREHOUSES_CHANGED`). `GET /api/v1/restaurants/{id}/warehouses` returns the Active allowed warehouses (Owner/Admin any; Restaurant Supervisor only for their own scoped restaurants, else 403). `POST /supply-requests` now requires the warehouse to be allowed for the restaurant AND Active AND same company. UI: Owner/Admin get a "المخازن المسموح بها" dialog per restaurant; the supervisor's form lists only the allowed warehouses of the chosen restaurant and says so when there are none. This supersedes the "any active company warehouse" wording in §32.
+2. **Direct issue in non-base units - implemented.** The server already resolved the unit through `IUnitConversionResolver`; the dialog now offers the item's base unit plus its ACTIVE defined conversions per line. 1 carton = 12 → 2 cartons deducts 24 from the base balance and the ledger row carries base quantity -24; an undefined conversion returns `CONVERSION_NOT_DEFINED` (Arabic message) and writes nothing; a client-posted factor/base quantity is ignored.
+3. **Settings - unchanged by design.** The page shows only what the model defines: company name and currency (read-only) and the timezone (editable, audited). No working hours, no global low-stock threshold; low-stock/reorder stays item-level.
+
+**Tests:** backend 206 integration + 27 unit + 19 architecture; only `IdempotencyServiceTests.Cleanup_Removes_Only_Expired_Records` (pre-existing timing flake) can fail under parallel load. New: `RestaurantWarehouseTests` (allowed/denied/inactive/cross-company/role/scope/DB-level FK), 3 direct-issue unit-conversion tests; browser: `allowed-warehouses-and-units.spec.ts` plus all earlier specs re-run green.
+

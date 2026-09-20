@@ -260,4 +260,73 @@ public sealed class DirectIssueTests : IClassFixture<WebApplicationFactory<Progr
         Assert.Equal(HttpStatusCode.BadRequest, zero.StatusCode);
         Assert.Equal(50m, await BalanceAsync(seed.WarehouseId, seed.ItemId));
     }
+
+    private static async Task<Guid> NewUnitAsync(HttpClient client)
+    {
+        using HttpResponseMessage response = await AuthTestHelpers.PostJsonAsync(
+            client, "/api/v1/units", new { nameArabic = "كرتونة " + Guid.NewGuid().ToString("N")[..6], abbreviation = (string?)null });
+        return (await response.Content.ReadFromJsonAsync<IdDto>())!.Id;
+    }
+
+    private static Task<HttpResponseMessage> DirectIssueInUnitAsync(Seed seed, Guid unitId, decimal quantity) =>
+        SendIdempotentAsync(seed.OwnerClient, "/api/v1/supplies/direct-issue",
+            new { warehouseId = seed.WarehouseId, restaurantId = seed.RestaurantId, lines = new[] { new { itemId = seed.ItemId, unitId, quantity } } },
+            Guid.NewGuid().ToString());
+
+    /// <summary>1 carton = 12 base units: issuing 2 cartons must deduct 24 from the base-unit
+    /// balance, and the ledger row must carry the base quantity (the engine only ever moves base).</summary>
+    [Fact]
+    public async Task A_Defined_Non_Base_Unit_Is_Converted_Server_Side_And_The_Ledger_Moves_Base_Quantity()
+    {
+        Seed seed = await SeedAsync(openingBalance: 100m);
+        Guid carton = await NewUnitAsync(seed.OwnerClient);
+        using HttpResponseMessage conversion = await AuthTestHelpers.PostJsonAsync(
+            seed.OwnerClient, $"/api/v1/items/{seed.ItemId}/conversions", new { fromUnitId = carton, conversionFactor = 12m });
+        Assert.Equal(HttpStatusCode.Created, conversion.StatusCode);
+
+        using HttpResponseMessage response = await DirectIssueInUnitAsync(seed, carton, 2m);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(76m, await BalanceAsync(seed.WarehouseId, seed.ItemId));
+
+        using IServiceScope scope = _factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        StockLedgerEntry entry = await context.StockLedgerEntries.IgnoreQueryFilters().AsNoTracking()
+            .Where(l => l.CompanyId == seed.CompanyId && l.MovementType == MovementType.RestaurantReceiptConfirmed).SingleAsync();
+        Assert.Equal(-24m, entry.BaseQuantity);
+        Assert.Equal(-2m, entry.Quantity);
+        Assert.Equal(carton, entry.UnitId);
+    }
+
+    [Fact]
+    public async Task A_Unit_Without_A_Defined_Conversion_Is_Rejected_With_A_Clear_Error_And_Nothing_Is_Written()
+    {
+        Seed seed = await SeedAsync(openingBalance: 100m);
+        Guid undefinedUnit = await NewUnitAsync(seed.OwnerClient);
+        int ledgerBefore = await LedgerCountAsync(seed.CompanyId);
+
+        using HttpResponseMessage response = await DirectIssueInUnitAsync(seed, undefinedUnit, 2m);
+
+        Assert.True(response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Conflict);
+        string body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("CONVERSION_NOT_DEFINED", body, StringComparison.Ordinal);
+        Assert.Contains("messageAr", body, StringComparison.Ordinal);
+        Assert.Equal(100m, await BalanceAsync(seed.WarehouseId, seed.ItemId));
+        Assert.Equal(ledgerBefore, await LedgerCountAsync(seed.CompanyId));
+    }
+
+    [Fact]
+    public async Task A_Client_Supplied_Conversion_Factor_Is_Ignored()
+    {
+        Seed seed = await SeedAsync(openingBalance: 100m);
+        Guid carton = await NewUnitAsync(seed.OwnerClient);
+        await AuthTestHelpers.PostJsonAsync(seed.OwnerClient, $"/api/v1/items/{seed.ItemId}/conversions", new { fromUnitId = carton, conversionFactor = 12m });
+
+        using HttpResponseMessage response = await SendIdempotentAsync(seed.OwnerClient, "/api/v1/supplies/direct-issue",
+            new { warehouseId = seed.WarehouseId, restaurantId = seed.RestaurantId, lines = new[] { new { itemId = seed.ItemId, unitId = carton, quantity = 1m, conversionFactor = 1m, baseQuantity = 1m } } },
+            Guid.NewGuid().ToString());
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(88m, await BalanceAsync(seed.WarehouseId, seed.ItemId));
+    }
 }

@@ -59,6 +59,7 @@ public sealed class SupplyRequestTests : IClassFixture<WebApplicationFactory<Pro
         using HttpResponseMessage restaurantResponse = await AuthTestHelpers.PostJsonAsync(
             client, "/api/v1/restaurants", new { nameArabic = "فرع", code = "BR-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
         var restaurant = await restaurantResponse.Content.ReadFromJsonAsync<IdDto>();
+        await AuthTestHelpers.AllowWarehouseAsync(client, restaurant!.Id, warehouse!.Id);
 
         using HttpResponseMessage categoryResponse = await AuthTestHelpers.PostJsonAsync(
             client, "/api/v1/categories", new { nameArabic = "قسم " + Guid.NewGuid().ToString("N")[..6], description = (string?)null });
@@ -217,6 +218,7 @@ public sealed class SupplyRequestTests : IClassFixture<WebApplicationFactory<Pro
         using HttpResponseMessage secondWarehouseResponse = await AuthTestHelpers.PostJsonAsync(
             seed.OwnerClient, "/api/v1/warehouses", new { nameArabic = "مستودع ثاني", code = "WH-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
         var secondWarehouse = await secondWarehouseResponse.Content.ReadFromJsonAsync<IdDto>();
+        await AuthTestHelpers.AllowWarehouseAsync(seed.OwnerClient, seed.RestaurantId, seed.WarehouseId, secondWarehouse!.Id);
 
         using HttpResponseMessage secondCreateResponse = await AuthTestHelpers.PostJsonAsync(
             seed.OwnerClient, "/api/v1/supply-requests", new { restaurantId = seed.RestaurantId, warehouseId = secondWarehouse!.Id });
@@ -275,6 +277,7 @@ public sealed class SupplyRequestTests : IClassFixture<WebApplicationFactory<Pro
         using HttpResponseMessage otherRestaurantResponse = await AuthTestHelpers.PostJsonAsync(
             seed.OwnerClient, "/api/v1/restaurants", new { nameArabic = "فرع آخر", code = "BR-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
         var otherRestaurant = await otherRestaurantResponse.Content.ReadFromJsonAsync<IdDto>();
+        await AuthTestHelpers.AllowWarehouseAsync(seed.OwnerClient, otherRestaurant!.Id, seed.WarehouseId);
 
         (User supervisorUser, string supervisorPassword) = await AuthTestHelpers.CreateUserInCompanyAsync(_factory, seed.CompanyId);
         await AuthTestHelpers.AssignRoleAsync(_factory, supervisorUser.Id, RoleName.RestaurantSupervisor);
@@ -306,6 +309,7 @@ public sealed class SupplyRequestTests : IClassFixture<WebApplicationFactory<Pro
         using HttpResponseMessage secondWarehouseResponse = await AuthTestHelpers.PostJsonAsync(
             seed.OwnerClient, "/api/v1/warehouses", new { nameArabic = "مستودع ثاني", code = "WH-" + Guid.NewGuid().ToString("N")[..6], address = (string?)null, description = (string?)null });
         var secondWarehouse = await secondWarehouseResponse.Content.ReadFromJsonAsync<IdDto>();
+        await AuthTestHelpers.AllowWarehouseAsync(seed.OwnerClient, seed.RestaurantId, seed.WarehouseId, secondWarehouse!.Id);
 
         (User supervisorUser, string supervisorPassword) = await AuthTestHelpers.CreateUserInCompanyAsync(_factory, seed.CompanyId);
         await AuthTestHelpers.AssignRoleAsync(_factory, supervisorUser.Id, RoleName.RestaurantSupervisor);

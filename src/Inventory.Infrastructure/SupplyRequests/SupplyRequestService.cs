@@ -52,6 +52,15 @@ public sealed class SupplyRequestService : ISupplyRequestService
             return TransactionalResult.Failure<SupplyRequestSummary>(TransactionalError.WarehouseUnavailable);
         }
 
+        // Product decision: the restaurant may only request from warehouses Owner/Admin explicitly
+        // allowed for it (restaurant_warehouses) - same fail-closed error as an unknown/inactive one.
+        bool allowed = await _context.RestaurantWarehouses.AsNoTracking()
+            .AnyAsync(m => m.RestaurantId == command.RestaurantId && m.WarehouseId == command.WarehouseId, cancellationToken);
+        if (!allowed)
+        {
+            return TransactionalResult.Failure<SupplyRequestSummary>(TransactionalError.WarehouseUnavailable);
+        }
+
         await using IDbContextTransaction transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
         string documentNumber = await _sequenceService.AllocateAsync(DocumentType.SupplyRequest, cancellationToken);
