@@ -60,7 +60,7 @@ REM ---- 4. API -------------------------------------------------------------
 echo [3/5] API...
 netstat -an | findstr /C:":5165 " | findstr LISTENING >nul 2>&1
 if errorlevel 1 (
-  start "Inventory.Api" /min "%ROOT%_run-api.cmd"
+  powershell -NoProfile -Command "Start-Process -FilePath '%ROOT%_run-api.cmd' -WindowStyle Minimized"
 )
 set /a N=0
 :waitapi
@@ -78,7 +78,7 @@ if not exist "%ROOT%frontend\node_modules" (
 )
 netstat -an | findstr /C:":3000 " | findstr LISTENING >nul 2>&1
 if errorlevel 1 (
-  start "Inventory.Web" /min "%ROOT%_run-web.cmd"
+  powershell -NoProfile -Command "Start-Process -FilePath '%ROOT%_run-web.cmd' -WindowStyle Minimized"
 )
 set /a N=0
 :waitweb
