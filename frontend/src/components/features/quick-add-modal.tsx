@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import { useState, type FormEvent } from 'react';
-import { Plus } from 'lucide-react';
-import { apiClient, ApiError } from '@/lib/api-client';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { useState, type FormEvent } from "react";
+import { Plus } from "lucide-react";
+import { apiClient, ApiError } from "@/lib/api-client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -14,8 +14,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { ErrorBanner } from '@/components/feedback/error-banner';
+} from "@/components/ui/dialog";
+import { ErrorBanner } from "@/components/feedback/error-banner";
 
 interface CreatedEntity {
   id: string;
@@ -28,6 +28,8 @@ export interface QuickAddModalProps {
   basePath: string;
   secondaryField?: { key: string; label: string };
   onCreated: (entity: CreatedEntity) => void;
+  /** 'field' renders the trigger as a full-width button that stands in for an empty select. */
+  appearance?: "link" | "field";
 }
 
 /**
@@ -36,10 +38,16 @@ export interface QuickAddModalProps {
  * entity back to the caller, which selects it - zero page refresh, zero form-state loss
  * for the item form underneath.
  */
-export function QuickAddModal({ label, basePath, secondaryField, onCreated }: QuickAddModalProps) {
+export function QuickAddModal({
+  label,
+  basePath,
+  secondaryField,
+  onCreated,
+  appearance = "link",
+}: QuickAddModalProps) {
   const [open, setOpen] = useState(false);
-  const [nameArabic, setNameArabic] = useState('');
-  const [secondaryValue, setSecondaryValue] = useState('');
+  const [nameArabic, setNameArabic] = useState("");
+  const [secondaryValue, setSecondaryValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -57,15 +65,16 @@ export function QuickAddModal({ label, basePath, secondaryField, onCreated }: Qu
     try {
       const body: Record<string, string | null> = { nameArabic };
       if (secondaryField) {
-        body[secondaryField.key] = secondaryValue.trim() === '' ? null : secondaryValue;
+        body[secondaryField.key] =
+          secondaryValue.trim() === "" ? null : secondaryValue;
       }
       const created = await apiClient.post<CreatedEntity>(basePath, body);
       setOpen(false);
-      setNameArabic('');
-      setSecondaryValue('');
+      setNameArabic("");
+      setSecondaryValue("");
       onCreated(created);
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.messageAr : 'تعذر الحفظ');
+      setError(caught instanceof ApiError ? caught.messageAr : "تعذر الحفظ");
     } finally {
       setIsSubmitting(false);
     }
@@ -74,31 +83,59 @@ export function QuickAddModal({ label, basePath, secondaryField, onCreated }: Qu
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button type="button" variant="link" size="sm" className="h-auto p-0">
-          <Plus className="size-3.5" />
-          {label}
-        </Button>
+        {appearance === "field" ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full justify-between font-normal text-muted-foreground"
+          >
+            {label}
+            <Plus className="size-4" />
+          </Button>
+        ) : (
+          <Button type="button" variant="link" size="sm" className="h-auto p-0">
+            <Plus className="size-3.5" />
+            {label}
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <DialogHeader>
-            <DialogTitle>{label}</DialogTitle>
-            <DialogDescription>سيُختار العنصر الجديد تلقائياً بعد الحفظ.</DialogDescription>
+            <DialogTitle>{dialogTitle ?? label}</DialogTitle>
+            <DialogDescription>
+              سيُختار العنصر الجديد تلقائياً بعد الحفظ.
+            </DialogDescription>
           </DialogHeader>
 
           {error ? <ErrorBanner message={error} /> : null}
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="quick-add-name">
-              الاسم <span aria-hidden="true" className="text-destructive">*</span>
+              الاسم{" "}
+              <span aria-hidden="true" className="text-destructive">
+                *
+              </span>
             </Label>
-            <Input id="quick-add-name" required autoFocus value={nameArabic} onChange={(event) => setNameArabic(event.target.value)} />
+            <Input
+              id="quick-add-name"
+              required
+              autoFocus
+              value={nameArabic}
+              onChange={(event) => setNameArabic(event.target.value)}
+            />
           </div>
 
           {secondaryField ? (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="quick-add-secondary">{secondaryField.label}</Label>
-              <Input id="quick-add-secondary" value={secondaryValue} onChange={(event) => setSecondaryValue(event.target.value)} />
+              <Label htmlFor="quick-add-secondary">
+                {secondaryField.label}
+              </Label>
+              <Input
+                id="quick-add-secondary"
+                value={secondaryValue}
+                onChange={(event) => setSecondaryValue(event.target.value)}
+              />
             </div>
           ) : null}
 
