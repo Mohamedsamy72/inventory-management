@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { apiClient, ApiError } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
@@ -67,11 +67,13 @@ export function ItemConversions({ itemId, baseUnitId, units }: ItemConversionsPr
     void load();
   }, [itemId]);
 
-  async function handleAdd(event: FormEvent) {
-    event.preventDefault();
-    // Same React-portal event-bubbling issue as QuickAddModal (see its handleSubmit comment) -
-    // this form is nested inside the item edit form and would otherwise also submit it.
-    event.stopPropagation();
+  // This block renders INSIDE the item edit <form>, and HTML forbids nested forms (hydration
+  // error), so it is a plain <div> with an explicit button - never its own <form>. Enter in the
+  // factor field is handled below so it adds the conversion instead of submitting the item form.
+  async function handleAdd() {
+    if (!fromUnitId || !(Number(factor) > 0)) {
+      return;
+    }
     setFormError(null);
     setIsSubmitting(true);
 
@@ -130,10 +132,10 @@ export function ItemConversions({ itemId, baseUnitId, units }: ItemConversionsPr
       {formError ? <ErrorBanner message={formError} /> : null}
 
       {availableUnits.length > 0 ? (
-        <form onSubmit={handleAdd} className="flex items-end gap-2">
+        <div className="flex items-end gap-2">
           <div className="flex flex-1 flex-col gap-1.5">
             <Label htmlFor="conversion-unit">الوحدة</Label>
-            <Select value={fromUnitId} onValueChange={setFromUnitId} required>
+            <Select value={fromUnitId} onValueChange={setFromUnitId}>
               <SelectTrigger id="conversion-unit" className="w-full">
                 <SelectValue placeholder="اختر وحدة" />
               </SelectTrigger>
@@ -154,15 +156,20 @@ export function ItemConversions({ itemId, baseUnitId, units }: ItemConversionsPr
               min="0.0001"
               step="any"
               dir="ltr"
-              required
               value={factor}
               onChange={(event) => setFactor(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void handleAdd();
+                }
+              }}
             />
           </div>
-          <Button type="submit" loading={isSubmitting} disabled={!fromUnitId}>
+          <Button type="button" onClick={() => void handleAdd()} loading={isSubmitting} disabled={!fromUnitId || !(Number(factor) > 0)}>
             إضافة
           </Button>
-        </form>
+        </div>
       ) : null}
     </div>
   );
