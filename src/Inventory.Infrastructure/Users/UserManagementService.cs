@@ -1,5 +1,6 @@
 using Inventory.Application.Common;
 using Inventory.Application.Users;
+using Inventory.Domain.Common;
 using Inventory.Domain.Entities;
 using Inventory.Domain.Enums;
 using Inventory.Infrastructure.Persistence;
@@ -42,13 +43,42 @@ public sealed class UserManagementService : IUserManagementService
             return UserManagementResult.Failure<UserSummary>(UserManagementError.PrivilegeEscalation);
         }
 
+        // The role is never trusted: it must be a DEFINED role that actually exists as a row
+        // (Accountant is retired and has no row and no enum member, so it can never be assigned).
+        if (!Enum.IsDefined(command.Role))
+        {
+            return UserManagementResult.Failure<UserSummary>(UserManagementError.InvalidRole);
+        }
+
         Role? role = await _context.Roles.FirstOrDefaultAsync(r => r.Name == command.Role, cancellationToken);
         if (role is null)
         {
-            return UserManagementResult.Failure<UserSummary>(UserManagementError.NotFound, "Role");
+            return UserManagementResult.Failure<UserSummary>(UserManagementError.InvalidRole);
         }
 
-        var user = new User(_currentUserService.CompanyId, command.FullName, command.MobileNumber, "placeholder", "placeholder");
+        if (string.IsNullOrWhiteSpace(command.FullName) || command.FullName.Trim().Length > 200)
+        {
+            return UserManagementResult.Failure<UserSummary>(UserManagementError.InvalidName);
+        }
+
+        string mobile = MobileNumberNormalizer.Normalize(command.MobileNumber ?? string.Empty);
+        if (mobile.Length is < 10 or > 15)
+        {
+            return UserManagementResult.Failure<UserSummary>(UserManagementError.InvalidMobile);
+        }
+
+        if (await MobileTakenAsync(mobile, exceptUserId: null, cancellationToken))
+        {
+            return UserManagementResult.Failure<UserSummary>(UserManagementError.DuplicateMobile);
+        }
+
+        UserManagementError scopeError = await ValidateScopeAsync(command.Role, command.Scope, cancellationToken);
+        if (scopeError != UserManagementError.None)
+        {
+            return UserManagementResult.Failure<UserSummary>(scopeError);
+        }
+
+        var user = new User(_currentUserService.CompanyId, command.FullName.Trim(), mobile, "placeholder", "placeholder");
 
         // UserManager.CreateAsync -> UserStore.CreateAsync saves eagerly (ASP.NET Core Identity
         // owns that call, not this service), so an explicit transaction is the only way to keep
@@ -67,13 +97,26 @@ public sealed class UserManagementService : IUserManagementService
 
         _context.UserRoles.Add(new UserRole(user.Id, role.Id));
 
+        if (command.Scope is not null)
+        {
+            foreach (Guid warehouseId in command.Scope.WarehouseIds.Distinct())
+            {
+                _context.UserWarehouseScopes.Add(new UserWarehouseScope(_currentUserService.CompanyId, user.Id, warehouseId));
+            }
+
+            foreach (Guid restaurantId in command.Scope.RestaurantIds.Distinct())
+            {
+                _context.UserRestaurantScopes.Add(new UserRestaurantScope(_currentUserService.CompanyId, user.Id, restaurantId));
+            }
+        }
+
         _auditLogger.Record(new AuditEntry(
             "USER_CREATED",
             nameof(User),
             user.Id,
             $"تم إنشاء مستخدم جديد: {user.FullName} بدور {command.Role}",
             OldValues: null,
-            NewValues: new { user.FullName, user.MobileNumber, Role = command.Role },
+            NewValues: new { user.FullName, user.MobileNumber, Role = command.Role, command.Scope?.WarehouseIds, command.Scope?.RestaurantIds },
             AuditResult.Success));
 
         await _context.SaveChangesAsync(cancellationToken);
@@ -171,6 +214,13 @@ public sealed class UserManagementService : IUserManagementService
         if (user is null)
         {
             return UserManagementResult.Failure<UserScope>(UserManagementError.NotFound);
+        }
+
+        RoleName? targetRole = await RoleOfAsync(userId, cancellationToken);
+        UserManagementError scopeError = await ValidateScopeAsync(targetRole, scope, cancellationToken);
+        if (scopeError != UserManagementError.None)
+        {
+            return UserManagementResult.Failure<UserScope>(scopeError);
         }
 
         List<UserWarehouseScope> existingWarehouseScopes =
@@ -358,6 +408,157 @@ public sealed class UserManagementService : IUserManagementService
 
         RoleName? role = await RoleOfAsync(userId, cancellationToken);
         return UserManagementResult.Success(new UserSummary(user.Id, user.FullName, user.MobileNumber, role, user.IsActive));
+    }
+
+    public async Task<UserManagementResult<UserSummary>> UpdateUserAsync(Guid userId, UpdateUserCommand command, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        User? user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        if (user is null)
+        {
+            return UserManagementResult.Failure<UserSummary>(UserManagementError.NotFound);
+        }
+
+        RoleName? targetRole = await RoleOfAsync(userId, cancellationToken);
+        if (targetRole == RoleName.Owner)
+        {
+            // An Owner's account (name/mobile) is never edited through this administrative path -
+            // not by an Admin, not by another Owner, not by themselves. The Owner's own mobile
+            // change is an OTP-verified account operation (see AccountSecurityEndpoints).
+            return UserManagementResult.Failure<UserSummary>(UserManagementError.PrivilegeEscalation);
+        }
+
+        if (string.IsNullOrWhiteSpace(command.FullName) || command.FullName.Trim().Length > 200)
+        {
+            return UserManagementResult.Failure<UserSummary>(UserManagementError.InvalidName);
+        }
+
+        string mobile = MobileNumberNormalizer.Normalize(command.MobileNumber ?? string.Empty);
+        bool mobileChanged = mobile != user.MobileNumber;
+        if (mobileChanged)
+        {
+            if (_currentUserService.Role != RoleName.Owner)
+            {
+                return UserManagementResult.Failure<UserSummary>(UserManagementError.PrivilegeEscalation);
+            }
+
+            if (mobile.Length is < 10 or > 15)
+            {
+                return UserManagementResult.Failure<UserSummary>(UserManagementError.InvalidMobile);
+            }
+
+            if (await MobileTakenAsync(mobile, userId, cancellationToken))
+            {
+                return UserManagementResult.Failure<UserSummary>(UserManagementError.DuplicateMobile);
+            }
+        }
+
+        string oldName = user.FullName;
+        string oldMobile = user.MobileNumber;
+        user.UpdateProfile(command.FullName.Trim(), mobile);
+
+        _auditLogger.Record(new AuditEntry(
+            "USER_PROFILE_UPDATED", nameof(User), userId,
+            $"تم تعديل بيانات المستخدم {user.FullName}",
+            OldValues: new { FullName = oldName, MobileNumber = oldMobile },
+            NewValues: new { user.FullName, user.MobileNumber },
+            AuditResult.Success));
+
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation })
+        {
+            // Lost a race against a concurrent creation of the same number - the DB index is the authority.
+            return UserManagementResult.Failure<UserSummary>(UserManagementError.DuplicateMobile);
+        }
+
+        if (mobileChanged)
+        {
+            // The mobile number IS the login identifier: rotate the stamp so old sessions end.
+            await _userManager.UpdateSecurityStampAsync(user);
+        }
+
+        return UserManagementResult.Success(new UserSummary(user.Id, user.FullName, user.MobileNumber, targetRole, user.IsActive));
+    }
+
+    public async Task<UserManagementResult<bool>> SetPasswordAsync(Guid userId, string newPassword, CancellationToken cancellationToken)
+    {
+        // Owner authority only - this is the administrative reset, deliberately NOT available to Admin.
+        if (_currentUserService.Role != RoleName.Owner || userId == _currentUserService.UserId)
+        {
+            return UserManagementResult.Failure<bool>(UserManagementError.PrivilegeEscalation);
+        }
+
+        User? user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        if (user is null)
+        {
+            return UserManagementResult.Failure<bool>(UserManagementError.NotFound);
+        }
+
+        if (await RoleOfAsync(userId, cancellationToken) == RoleName.Owner)
+        {
+            return UserManagementResult.Failure<bool>(UserManagementError.PrivilegeEscalation);
+        }
+
+        string token = await _userManager.GeneratePasswordResetTokenAsync(user);
+        IdentityResult result = await _userManager.ResetPasswordAsync(user, token, newPassword);
+        if (!result.Succeeded)
+        {
+            // Only Identity's policy descriptions are echoed - never the submitted password.
+            return UserManagementResult.Failure<bool>(UserManagementError.IdentityCreationFailed, string.Join(", ", result.Errors.Select(x => x.Description)));
+        }
+
+        // Explicit rather than relying on ResetPasswordAsync's internal behaviour: every session
+        // issued before this reset dies on its next request.
+        await _userManager.UpdateSecurityStampAsync(user);
+
+        _auditLogger.Record(new AuditEntry(
+            "USER_PASSWORD_RESET_BY_ADMIN", nameof(User), userId,
+            $"قام المالك بإعادة تعيين كلمة مرور المستخدم {user.FullName}",
+            OldValues: null, NewValues: null, AuditResult.Success));
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return UserManagementResult.Success(true);
+    }
+
+    private async Task<bool> MobileTakenAsync(string normalizedMobile, Guid? exceptUserId, CancellationToken cancellationToken) =>
+        // The mobile number is the login identifier and login looks users up across companies, so
+        // uniqueness is global - the query filter is bypassed on purpose.
+        await _context.Users.IgnoreQueryFilters().AsNoTracking()
+            .AnyAsync(u => u.MobileNumber == normalizedMobile && (exceptUserId == null || u.Id != exceptUserId), cancellationToken);
+
+    /// <summary>Every id must exist in the caller's company (the filtered DbSets make another company's
+    /// id indistinguishable from a nonexistent one), and scope must fit the role: warehouses only for
+    /// Warehouse Staff, restaurants only for Restaurant Supervisor.</summary>
+    private async Task<UserManagementError> ValidateScopeAsync(RoleName? role, UserScope? scope, CancellationToken cancellationToken)
+    {
+        if (scope is null)
+        {
+            return UserManagementError.None;
+        }
+
+        List<Guid> warehouseIds = scope.WarehouseIds.Distinct().ToList();
+        List<Guid> restaurantIds = scope.RestaurantIds.Distinct().ToList();
+
+        if ((warehouseIds.Count > 0 && role != RoleName.WarehouseStaff) || (restaurantIds.Count > 0 && role != RoleName.RestaurantSupervisor))
+        {
+            return UserManagementError.InvalidScope;
+        }
+
+        if (warehouseIds.Count > 0 && await _context.Warehouses.CountAsync(w => warehouseIds.Contains(w.Id), cancellationToken) != warehouseIds.Count)
+        {
+            return UserManagementError.InvalidScope;
+        }
+
+        if (restaurantIds.Count > 0 && await _context.Restaurants.CountAsync(r => restaurantIds.Contains(r.Id), cancellationToken) != restaurantIds.Count)
+        {
+            return UserManagementError.InvalidScope;
+        }
+
+        return UserManagementError.None;
     }
 
     public async Task<IReadOnlyList<PermissionCatalogueItem>> ListPermissionCatalogueAsync(CancellationToken cancellationToken) =>

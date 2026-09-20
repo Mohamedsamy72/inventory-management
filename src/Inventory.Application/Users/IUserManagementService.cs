@@ -45,5 +45,14 @@ public interface IUserManagementService
 
     /// <summary>The full global permission catalogue, for a permission-editing UI to render real
     /// codes/descriptions/grantability rather than a client-side hardcoded duplicate.</summary>
+    /// <summary>Edits name (any manager) and mobile number (Owner only, never an Owner's own or another
+    /// Owner's - those go through OTP). Rotates the security stamp when the mobile changes.</summary>
+    Task<UserManagementResult<UserSummary>> UpdateUserAsync(Guid userId, UpdateUserCommand command, CancellationToken cancellationToken);
+
+    /// <summary>Owner-only administrative password reset for a NON-Owner user: no current password
+    /// needed, Identity policy enforced, security stamp rotated (existing sessions die), audited
+    /// without any secret. Never usable on an Owner (including the caller) - see the OTP flow.</summary>
+    Task<UserManagementResult<bool>> SetPasswordAsync(Guid userId, string newPassword, CancellationToken cancellationToken);
+
     Task<IReadOnlyList<PermissionCatalogueItem>> ListPermissionCatalogueAsync(CancellationToken cancellationToken);
 }

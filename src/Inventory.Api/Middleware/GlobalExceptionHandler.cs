@@ -59,6 +59,27 @@ public sealed partial class GlobalExceptionHandler : IExceptionHandler
             httpContext.Items[CorrelationIdMiddleware.HeaderName] as string
             ?? httpContext.TraceIdentifier;
 
+        // A request body/route value the binder could not read (malformed JSON, an unknown enum name such
+        // as a retired role, a bad GUID...) is the CLIENT's error: 400, never a 500. Nothing about the
+        // exception is echoed back.
+        if (exception is BadHttpRequestException)
+        {
+            var bad = new ProblemDetails
+            {
+                Type = "https://errors.inventory.local/INVALID_REQUEST",
+                Title = "Invalid Request",
+                Status = StatusCodes.Status400BadRequest,
+                Instance = httpContext.Request.Path.Value,
+            };
+            bad.Extensions["code"] = "INVALID_REQUEST";
+            bad.Extensions["messageAr"] = "بيانات الطلب غير صحيحة.";
+            bad.Extensions["correlationId"] = correlationId;
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            httpContext.Response.ContentType = "application/problem+json";
+            await httpContext.Response.WriteAsJsonAsync(bad, cancellationToken);
+            return true;
+        }
+
         LogUnhandledException(
             _logger,
             exception,

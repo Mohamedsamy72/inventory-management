@@ -137,6 +137,7 @@ app.MapDiscrepanciesEndpoints();
 app.MapStockCountsEndpoints();
 app.MapAuditEndpoints();
 app.MapSettingsEndpoints();
+app.MapAccountSecurityEndpoints();
 app.MapConsumptionEndpoints();
 
 // ---- Health probes (docs/32 CR-064) ---------------------------------------

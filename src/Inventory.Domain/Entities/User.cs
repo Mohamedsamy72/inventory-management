@@ -46,6 +46,15 @@ public sealed class User : Entity, ITenantScopedEntity
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
+    public void UpdateProfile(string fullName, string normalizedMobileNumber)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fullName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(normalizedMobileNumber);
+        FullName = fullName;
+        MobileNumber = MobileNumberNormalizer.Normalize(normalizedMobileNumber);
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
     public void Deactivate()
     {
         IsActive = false;

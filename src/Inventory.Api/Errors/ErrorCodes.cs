@@ -32,6 +32,12 @@ internal static class ErrorCodes
     /// the caller's own company - this is what that validation returns.</summary>
     public const string WarehouseUnavailable = "WAREHOUSE_UNAVAILABLE";
     public const string InvalidTimezone = "INVALID_TIMEZONE";
+    public const string DuplicateMobile = "DUPLICATE_MOBILE";
+    public const string InvalidMobile = "INVALID_MOBILE";
+    public const string InvalidRole = "INVALID_ROLE";
+    public const string InvalidScope = "INVALID_SCOPE";
+    public const string InvalidName = "INVALID_NAME";
+    public const string OwnerOnlyOperation = "OWNER_ONLY_OPERATION";
     public const string DuplicateItemName = "DUPLICATE_ITEM_NAME";
 
     /// <summary>New for Phase 5: docs/13's `DUPLICATE_ITEM_NAME` is item-specific by name and by
@@ -78,6 +84,12 @@ internal static class ErrorCodes
         SequenceExhausted => "تم استنفاد نطاق ترقيم المستندات، يرجى مراجعة إدارة النظام.",
         WarehouseUnavailable => "المخزن المحدد غير موجود أو غير مفعّل.",
         InvalidTimezone => "المنطقة الزمنية المدخلة غير صحيحة.",
+        DuplicateMobile => "رقم الجوال مسجل مسبقاً لحساب آخر.",
+        InvalidMobile => "رقم الجوال غير صحيح، يجب أن يتكون من 10 إلى 15 رقماً.",
+        InvalidRole => "الدور المحدد غير صالح أو غير متاح للتعيين.",
+        InvalidScope => "نطاق الوصول المحدد غير صالح لهذا الدور أو يحتوي على مخزن/فرع غير موجود.",
+        InvalidName => "الاسم مطلوب ويجب ألا يتجاوز 200 حرف.",
+        OwnerOnlyOperation => "هذه العملية متاحة للمالك فقط، ولا يمكن تنفيذها على حساب مالك.",
         DuplicateItemName => "يوجد صنف مسجل مسبقاً بنفس الاسم العربي في المنشأة.",
         DuplicateName => "يوجد سجل مسجل مسبقاً بنفس الاسم أو الرمز في المنشأة.",
         BaseUnitImmutable => "لا يمكن تغيير وحدة القياس الأساسية بعد وجود حركات مخزنية لهذا الصنف.",
@@ -109,6 +121,12 @@ internal static class ErrorCodes
         SequenceExhausted => "Document numbering range exhausted.",
         WarehouseUnavailable => "The selected warehouse does not exist or is not active.",
         InvalidTimezone => "The timezone is not valid.",
+        DuplicateMobile => "This mobile number is already registered.",
+        InvalidMobile => "The mobile number is not valid.",
+        InvalidRole => "The role is not valid or not assignable.",
+        InvalidScope => "The scope is not valid for this role or references an unknown location.",
+        InvalidName => "The name is required and must not exceed 200 characters.",
+        OwnerOnlyOperation => "This operation is Owner-only and cannot target an Owner account.",
         DuplicateItemName => "An item with this Arabic name already exists.",
         DuplicateName => "A record with this name or code already exists.",
         BaseUnitImmutable => "The base unit cannot change once stock ledger entries exist for this item.",

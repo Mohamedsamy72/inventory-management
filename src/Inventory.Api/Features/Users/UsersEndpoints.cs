@@ -4,7 +4,10 @@ using Inventory.Domain.Enums;
 
 namespace Inventory.Api.Features.Users;
 
-public sealed record CreateUserRequest(string FullName, string MobileNumber, string Password, RoleName Role);
+public sealed record CreateUserRequest(string FullName, string MobileNumber, string Password, RoleName Role, IReadOnlyList<Guid>? WarehouseIds = null, IReadOnlyList<Guid>? RestaurantIds = null);
+public sealed record UpdateUserRequest(string FullName, string MobileNumber);
+/// <summary>The password is accepted here and NEVER echoed, logged, or audited.</summary>
+public sealed record SetUserPasswordRequest(string NewPassword);
 public sealed record ChangeUserRoleRequest(RoleName Role);
 public sealed record SetUserScopeRequest(IReadOnlyList<Guid> WarehouseIds, IReadOnlyList<Guid> RestaurantIds);
 public sealed record PermissionGrantRequest(string Code, bool IsGranted);
@@ -24,6 +27,8 @@ public static class UsersEndpoints
         users.MapPost("/", CreateUserAsync).RequireAuthorization("users:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         users.MapGet("/", ListUsersAsync).RequireAuthorization("users:view");
         users.MapGet("/{id:guid}", GetUserAsync).RequireAuthorization("users:view");
+        users.MapPut("/{id:guid}", UpdateUserAsync).RequireAuthorization("users:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
+        users.MapPost("/{id:guid}/password", SetPasswordAsync).RequireAuthorization("users:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         users.MapPut("/{id:guid}/role", ChangeRoleAsync).RequireAuthorization("users:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         users.MapGet("/{id:guid}/scope", GetScopeAsync).RequireAuthorization("users:scope");
         users.MapPut("/{id:guid}/scope", SetScopeAsync).RequireAuthorization("users:scope").AddEndpointFilter<AntiforgeryEndpointFilter>();
@@ -41,7 +46,10 @@ public static class UsersEndpoints
     private static async Task<IResult> CreateUserAsync(
         CreateUserRequest request, HttpContext httpContext, IUserManagementService service)
     {
-        var command = new CreateUserCommand(request.FullName, request.MobileNumber, request.Password, request.Role);
+        UserScope? scope = request.WarehouseIds is null && request.RestaurantIds is null
+            ? null
+            : new UserScope(request.WarehouseIds ?? [], request.RestaurantIds ?? []);
+        var command = new CreateUserCommand(request.FullName, request.MobileNumber, request.Password, request.Role, scope);
         UserManagementResult<UserSummary> result = await service.CreateUserAsync(command, httpContext.RequestAborted);
 
         if (result.Succeeded)
@@ -59,6 +67,18 @@ public static class UsersEndpoints
     {
         UserSummary? user = await service.GetUserAsync(id, httpContext.RequestAborted);
         return user is null ? Results.NotFound() : Results.Ok(user);
+    }
+
+    private static async Task<IResult> UpdateUserAsync(Guid id, UpdateUserRequest request, HttpContext httpContext, IUserManagementService service)
+    {
+        UserManagementResult<UserSummary> result = await service.UpdateUserAsync(id, new UpdateUserCommand(request.FullName, request.MobileNumber), httpContext.RequestAborted);
+        return result.Succeeded ? Results.Ok(result.Value) : await WriteErrorAsync(httpContext, result.Error);
+    }
+
+    private static async Task<IResult> SetPasswordAsync(Guid id, SetUserPasswordRequest request, HttpContext httpContext, IUserManagementService service)
+    {
+        UserManagementResult<bool> result = await service.SetPasswordAsync(id, request.NewPassword, httpContext.RequestAborted);
+        return result.Succeeded ? Results.NoContent() : await WriteErrorAsync(httpContext, result.Error);
     }
 
     private static async Task<IResult> ChangeRoleAsync(
@@ -116,6 +136,11 @@ public static class UsersEndpoints
             UserManagementError.NonGrantablePermission => (StatusCodes.Status400BadRequest, ErrorCodes.NonGrantablePermission),
             UserManagementError.PrivilegeEscalation => (StatusCodes.Status403Forbidden, ErrorCodes.PrivilegeEscalationDenied),
             UserManagementError.IdentityCreationFailed => (StatusCodes.Status400BadRequest, ErrorCodes.InvalidPassword),
+            UserManagementError.DuplicateMobile => (StatusCodes.Status409Conflict, ErrorCodes.DuplicateMobile),
+            UserManagementError.InvalidMobile => (StatusCodes.Status400BadRequest, ErrorCodes.InvalidMobile),
+            UserManagementError.InvalidRole => (StatusCodes.Status400BadRequest, ErrorCodes.InvalidRole),
+            UserManagementError.InvalidScope => (StatusCodes.Status400BadRequest, ErrorCodes.InvalidScope),
+            UserManagementError.InvalidName => (StatusCodes.Status400BadRequest, ErrorCodes.InvalidName),
             _ => (StatusCodes.Status400BadRequest, ErrorCodes.InvalidPassword),
         };
 

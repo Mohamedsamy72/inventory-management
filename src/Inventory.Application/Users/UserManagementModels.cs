@@ -2,7 +2,12 @@ using Inventory.Domain.Enums;
 
 namespace Inventory.Application.Users;
 
-public sealed record CreateUserCommand(string FullName, string MobileNumber, string Password, RoleName Role);
+/// <summary>`Scope` is optional; when supplied it is validated exactly like <c>SetScopeAsync</c> (tenant, role fit) and applied
+/// in the same transaction as the account itself.</summary>
+public sealed record CreateUserCommand(string FullName, string MobileNumber, string Password, RoleName Role, UserScope? Scope = null);
+
+/// <summary>Owner-only profile edit: name for any manager, mobile number only for the Owner (it is the login identifier).</summary>
+public sealed record UpdateUserCommand(string FullName, string MobileNumber);
 
 public sealed record UserSummary(Guid Id, string FullName, string MobileNumber, RoleName? Role, bool IsActive);
 
@@ -25,6 +30,16 @@ public enum UserManagementError
     NonGrantablePermission,
     PrivilegeEscalation,
     IdentityCreationFailed,
+    /// <summary>Mobile number is not 10-15 digits after normalization.</summary>
+    InvalidMobile,
+    /// <summary>Mobile number already belongs to another account (unique across ALL companies - it is the login id).</summary>
+    DuplicateMobile,
+    /// <summary>Role is not a defined, assignable role.</summary>
+    InvalidRole,
+    /// <summary>A scope id does not exist in the caller's company, or does not fit the user's role.</summary>
+    InvalidScope,
+    /// <summary>Full name missing or too long.</summary>
+    InvalidName,
 }
 
 public sealed record UserManagementResult<T>(bool Succeeded, T? Value, UserManagementError Error, string? ErrorDetail = null);

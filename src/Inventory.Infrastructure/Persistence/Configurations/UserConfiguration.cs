@@ -27,6 +27,8 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
 
         builder.HasOne<Company>().WithMany().HasForeignKey(e => e.CompanyId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(e => new { e.CompanyId, e.MobileNumber }).IsUnique().HasDatabaseName("uq_users_company_mobile");
+        // The mobile number is the LOGIN identifier and login resolves it across companies, so it must be unique globally.
+        builder.HasIndex(e => e.MobileNumber).IsUnique().HasDatabaseName("uq_users_mobile");
         builder.HasIndex(e => new { e.CompanyId, e.CreatedAt, e.Id }).IsDescending(false, true, true).HasDatabaseName("ix_users_tenant_keyset");
     }
 }
