@@ -54,3 +54,6 @@ build-verification.log
 Thumbs.db
 *.swp
 .idea/
+
+# local launcher logs
+logs-*.txt
