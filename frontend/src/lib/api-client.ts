@@ -12,6 +12,13 @@
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:5165';
 
+/** A policy denial (403) or a bare 404 carries no problem body - say what it means instead of 'unexpected error'. */
+function fallbackMessageFor(status: number): string {
+  if (status === 403) return 'ليس لديك صلاحية لتنفيذ هذا الإجراء. إذا سجّلت الدخول بحساب آخر في نفس المتصفح فأعد تسجيل الدخول بحساب المالك.';
+  if (status === 404) return 'العنصر المطلوب غير موجود.';
+  return 'حدث خطأ غير متوقع، يرجى المحاولة لاحقاً';
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -88,7 +95,7 @@ async function request<T>(path: string, init: RequestInit = {}, skipAuthRedirect
     throw new ApiError(
       response.status,
       problem?.code ?? 'UNKNOWN_ERROR',
-      problem?.messageAr ?? 'حدث خطأ غير متوقع، يرجى المحاولة لاحقاً',
+      problem?.messageAr ?? fallbackMessageFor(response.status),
       problem?.correlationId ?? '',
     );
   }

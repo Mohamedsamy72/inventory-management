@@ -183,6 +183,14 @@ public static class DependencyInjection
                 options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
                 options.Lockout.AllowedForNewUsers = true;
                 options.User.RequireUniqueEmail = false;
+                // Product decision (2026-09-20, explicit request by the project owner): password policy
+                // relaxed to a 5-character minimum with no complexity requirements.
+                options.Password.RequiredLength = 5;
+                options.Password.RequireDigit = false;
+                options.Password.RequireLowercase = false;
+                options.Password.RequireUppercase = false;
+                options.Password.RequireNonAlphanumeric = false;
+                options.Password.RequiredUniqueChars = 1;
             })
             .AddUserStore<UserStore>()
             .AddClaimsPrincipalFactory<AppUserClaimsPrincipalFactory>()
