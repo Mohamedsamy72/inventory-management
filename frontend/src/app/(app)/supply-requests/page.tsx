@@ -6,19 +6,10 @@ import type { CellContext, ColumnDef } from '@tanstack/react-table';
 import { Plus } from 'lucide-react';
 import { useSession } from '@/lib/auth/session-context';
 import { useKeysetList } from '@/lib/use-keyset-list';
-import { apiClient, ApiError } from '@/lib/api-client';
+import { apiClient } from '@/lib/api-client';
+import { CreateSupplyRequestDialog } from '@/components/features/create-supply-request-dialog';
 import { DataTable } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { ErrorBanner } from '@/components/feedback/error-banner';
 import { ForbiddenState } from '@/components/feedback/forbidden-state';
 import { StatusBadge } from '@/components/domain/status-badge';
 
@@ -47,67 +38,26 @@ export default function SupplyRequestsPage() {
     useKeysetList<SupplyRequestSummary>('/api/v1/supply-requests');
 
   const [restaurants, setRestaurants] = useState<NamedOption[]>([]);
-  const [warehouses, setWarehouses] = useState<NamedOption[]>([]);
 
   useEffect(() => {
-    // "/names" (docs/03 §"Warehouses & Branches" - ❌ for Restaurant Supervisor), not the
-    // manage-gated list: this page's own "طلب جديد" dialog is exactly where a scoped
-    // Supervisor (who holds supply_requests:create but no restaurants:manage/warehouses:manage)
-    // needs to resolve their own restaurant's name and pick a warehouse to request from.
+    // "/names": Restaurant Supervisor holds no restaurants:manage (docs/03).
     apiClient.get<NamedOption[]>('/api/v1/restaurants/names').then(setRestaurants).catch(() => setRestaurants([]));
-    // Change 1 (reversed ADR-028): a restaurant can receive from more than one warehouse, so a
-    // Restaurant Supervisor now chooses one explicitly per request - every active company
-    // warehouse is offered, since Restaurant Supervisor has no warehouse-scope concept at all
-    // (only Warehouse Staff does).
-    apiClient.get<NamedOption[]>('/api/v1/warehouses/names').then(setWarehouses).catch(() => setWarehouses([]));
   }, []);
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [restaurantId, setRestaurantId] = useState('');
-  const [warehouseId, setWarehouseId] = useState('');
-  const [formError, setFormError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (profile && !profile.permissionCodes.includes('supply_requests:view')) {
     return <ForbiddenState reason="forbidden" />;
   }
 
   const canCreate = profile?.permissionCodes.includes('supply_requests:create') ?? false;
-  const scopedRestaurants = restaurants.filter((restaurant) => profile?.restaurantScopeIds.includes(restaurant.id));
 
   function restaurantName(id: string): string {
     return restaurants.find((restaurant) => restaurant.id === id)?.nameArabic ?? '—';
   }
 
-  useEffect(() => {
-    // The single-scope auto-select must react to `restaurants` finishing its async fetch, not
-    // just the moment the dialog was opened - opening the dialog before that fetch resolves
-    // previously left `restaurantId` stuck at '' forever (no dropdown either, since it only
-    // renders for >1 option), permanently disabling "إنشاء".
-    if (dialogOpen && !restaurantId && scopedRestaurants.length === 1) {
-      setRestaurantId(scopedRestaurants[0]!.id);
-    }
-  }, [dialogOpen, restaurantId, scopedRestaurants]);
-
   function openCreate() {
-    setRestaurantId('');
-    setWarehouseId('');
-    setFormError(null);
     setDialogOpen(true);
-  }
-
-  async function handleCreate() {
-    setFormError(null);
-    setIsSubmitting(true);
-    try {
-      const created = await apiClient.post<{ id: string }>('/api/v1/supply-requests', { restaurantId, warehouseId });
-      setDialogOpen(false);
-      router.push(`/supply-requests/${created.id}`);
-    } catch (caught) {
-      setFormError(caught instanceof ApiError ? caught.messageAr : 'تعذر إنشاء الطلب');
-    } finally {
-      setIsSubmitting(false);
-    }
   }
 
   const columns: ColumnDef<SupplyRequestSummary, unknown>[] = [
@@ -175,52 +125,7 @@ export default function SupplyRequestsPage() {
         )}
       />
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <div className="flex flex-col gap-4">
-            <DialogHeader>
-              <DialogTitle>طلب بضاعة جديد</DialogTitle>
-              <DialogDescription>اختر المخزن الذي تريد طلب البضاعة منه.</DialogDescription>
-            </DialogHeader>
-
-            {formError ? <ErrorBanner message={formError} /> : null}
-
-            {scopedRestaurants.length > 1 ? (
-              <Select value={restaurantId} onValueChange={(value) => value && setRestaurantId(value)} required>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="اختر الفرع" />
-                </SelectTrigger>
-                <SelectContent>
-                  {scopedRestaurants.map((restaurant) => (
-                    <SelectItem key={restaurant.id} value={restaurant.id}>
-                      {restaurant.nameArabic}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : null}
-
-            <Select value={warehouseId} onValueChange={(value) => value && setWarehouseId(value)} required>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="اختر المخزن" />
-              </SelectTrigger>
-              <SelectContent>
-                {warehouses.map((warehouse) => (
-                  <SelectItem key={warehouse.id} value={warehouse.id}>
-                    {warehouse.nameArabic}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <DialogFooter>
-              <Button loading={isSubmitting} disabled={!restaurantId || !warehouseId} onClick={handleCreate}>
-                إنشاء
-              </Button>
-            </DialogFooter>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <CreateSupplyRequestDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </div>
   );
 }

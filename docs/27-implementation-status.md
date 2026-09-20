@@ -1205,3 +1205,17 @@ Every nav entry now has a page and every `apiClient` path maps to a registered r
 2. Should direct issue support non-base units (conversion picker)?
 3. Which additional settings (company name, working hours, low-stock thresholds) should the Settings page expose - none are defined in the plan today?
 
+---
+
+## 33. Role-Specific Workspace Completion (2026-09-20)
+
+Inspection first; only gaps were changed. **Already implemented and left untouched:** role-scoped navigation (Warehouse Staff / Restaurant Supervisor menus carry no users/settings/audit/master-data/reports links), Owner-only financial projection with Admin/Staff/Supervisor receiving `null` costs server-side (`IFinancialProjection`), server-generated item codes (`ITM-000006`), Arabic-only items with no English-name/barcode anywhere in DB/API/UI, full and partial fulfilment (`PartiallyFulfilled`), automatic `SupplyReceiptVariance`/`ReceivingVariance` discrepancies, request-review and receipt-confirmation dialogs at their own lifecycle stages, and units/categories `GET/POST/PUT` (+deactivate/reactivate) under `units:manage` / `categories:manage` (Owner/Admin only; Staff/Supervisor get 403). Accountant stays retired.
+
+**Changed:** (1) the Restaurant Supervisor dashboard "+ طلب بضاعة جديد" now opens the creation dialog directly on the dashboard (shared `CreateSupplyRequestDialog`, also used by the list page) instead of navigating to the list first; (2) Warehouse Staff navigation gained "سجل الفروقات" (they already hold `discrepancies:view` and discrepancy handling is one of their workflows).
+
+**Verified** by `frontend/e2e/role-workflows.spec.ts` (real browser + real backend): direct-from-CTA creation, role navigation, direct API/URL 403s for users/settings/audit/units/categories, full approval + receipt (stock −10 exactly), partial approval (6/10) + partial receipt (4/6) → discrepancy −2 visible in UI, and Owner-vs-Admin/Staff cost visibility. Suite: backend 238/238, frontend 33/33 unit, typecheck/lint/build clean.
+
+**Not changed / open:** the supply-request state machine has no *Rejected* state - only Supervisor `Cancel` - so warehouse "reject" is not implemented (the brief allows it only "when the existing workflow allows rejection"). Adding it needs a product decision (below). The create flow is dialog (restaurant + warehouse) → editor page (items/quantities) → review dialog → submit; it was not merged into a single form.
+
+**Decision needed from Mohamed:** should Warehouse Staff be able to *reject* a submitted request (new terminal status + reason + `supply_requests:fulfill`-gated endpoint), or is Supervisor-side cancellation enough?
+

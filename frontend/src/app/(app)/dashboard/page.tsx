@@ -5,6 +5,8 @@ import { Plus } from 'lucide-react';
 import { useSession } from '@/lib/auth/session-context';
 import { Button } from '@/components/ui/button';
 import { LoadingSkeleton } from '@/components/feedback/loading-skeleton';
+import { useState } from 'react';
+import { CreateSupplyRequestDialog } from '@/components/features/create-supply-request-dialog';
 import { DashboardWidget } from '@/components/features/dashboard-widget';
 import { WarehouseInventoryCards } from '@/components/features/warehouse-inventory-cards';
 
@@ -45,6 +47,7 @@ const renderDoc = (item: { documentNumber: string }) => item.documentNumber;
  */
 export default function DashboardPage() {
   const { profile } = useSession();
+  const [createOpen, setCreateOpen] = useState(false);
 
   if (!profile) {
     return <LoadingSkeleton className="h-40 w-full" />;
@@ -106,11 +109,9 @@ export default function DashboardPage() {
           <p className="text-sm text-muted-foreground">ما الذي يجب أن أطلبه أو أؤكد استلامه اليوم للفرع؟</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button asChild>
-            <Link href="/supply-requests">
-              <Plus />
-              طلب بضاعة جديد
-            </Link>
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus />
+            طلب بضاعة جديد
           </Button>
           <Button asChild variant="outline">
             <Link href="/supplies">تأكيد استلام البضاعة</Link>
@@ -142,6 +143,7 @@ export default function DashboardPage() {
             viewAllHref="/discrepancies"
           />
         </div>
+        <CreateSupplyRequestDialog open={createOpen} onOpenChange={setCreateOpen} />
       </div>
     );
   }

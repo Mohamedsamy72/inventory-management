@@ -66,6 +66,7 @@ export function getNavItemsForRole(role: RoleName | null): AppShellNavItem[] {
         { href: '/receiving', label: 'الداخل الى المخزن', icon: Inbox },
         { href: '/supply-requests', label: 'الطلبيات الواردة من المطعم', icon: ClipboardList },
         { href: '/supplies', label: 'الصادر الى المطعم', icon: Send },
+        { href: '/discrepancies', label: 'سجل الفروقات', icon: TriangleAlert },
       ];
     case 'RestaurantSupervisor':
       return [
