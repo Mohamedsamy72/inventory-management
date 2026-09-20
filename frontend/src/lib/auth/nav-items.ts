@@ -27,7 +27,25 @@ import type { RoleName } from './types';
  * `/reports` is never included anywhere, for any role - the route is not registered at
  * all (ADR-029, docs/12 section 3), so it has no nav entry to omit conditionally.
  */
-export function getNavItemsForRole(role: RoleName | null): AppShellNavItem[] {
+/**
+ * The base "User" role has no fixed menu (docs/03 §1): its sidebar is built from the permissions it
+ * was explicitly granted. Only a navigation convenience - every endpoint still enforces its own policy.
+ */
+const PERMISSION_NAV: { codes: string[]; item: AppShellNavItem }[] = [
+  { codes: ['items:view'], item: { href: '/items', label: 'الأصناف', icon: Package } },
+  { codes: ['categories:manage', 'units:manage'], item: { href: '/master-data', label: 'الأقسام والوحدات', icon: Tags } },
+  { codes: ['warehouses:manage', 'restaurants:manage'], item: { href: '/locations', label: 'المخازن والفروع', icon: Building2 } },
+  { codes: ['suppliers:manage'], item: { href: '/suppliers', label: 'الموردون', icon: Truck } },
+  { codes: ['receiving:view'], item: { href: '/receiving', label: 'الداخل الى المخزن', icon: Inbox } },
+  { codes: ['supply_requests:view'], item: { href: '/supply-requests', label: 'طلبات البضاعه', icon: ClipboardList } },
+  { codes: ['supplies:view', 'supplies:direct_issue'], item: { href: '/supplies', label: 'الصادر الى المطعم', icon: Send } },
+  { codes: ['discrepancies:view'], item: { href: '/discrepancies', label: 'سجل الفروقات', icon: TriangleAlert } },
+  { codes: ['consumption:view', 'consumption:create'], item: { href: '/consumption', label: 'سجلات الاستهلاك', icon: UtensilsCrossed } },
+  { codes: ['users:view', 'users:manage'], item: { href: '/users', label: 'ادارة المستخدمين', icon: Users } },
+  { codes: ['settings:manage'], item: { href: '/settings', label: 'الإعدادات', icon: Settings } },
+];
+
+export function getNavItemsForRole(role: RoleName | null, permissionCodes: string[] = []): AppShellNavItem[] {
   switch (role) {
     case 'Owner':
       return [
@@ -78,6 +96,6 @@ export function getNavItemsForRole(role: RoleName | null): AppShellNavItem[] {
         { href: '/discrepancies', label: 'فروقات الاستلام', icon: TriangleAlert },
       ];
     default:
-      return [];
+      return PERMISSION_NAV.filter((entry) => entry.codes.some((code) => permissionCodes.includes(code))).map((entry) => entry.item);
   }
 }

@@ -56,7 +56,7 @@ export function AuthenticatedShell({ children }: { children: React.ReactNode }) 
 
   return (
     <AppShell
-      navItems={getNavItemsForRole(profile.role)}
+      navItems={getNavItemsForRole(profile.role, profile.permissionCodes)}
       headerActions={
         <>
           <ScopeDisplay warehouseCount={profile.warehouseScopeIds.length} restaurantCount={profile.restaurantScopeIds.length} />

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Plus } from 'lucide-react';
 import { useSession } from '@/lib/auth/session-context';
 import { Button } from '@/components/ui/button';
+import { getNavItemsForRole } from '@/lib/auth/nav-items';
 import { LoadingSkeleton } from '@/components/feedback/loading-skeleton';
 import { useState } from 'react';
 import { CreateSupplyRequestDialog } from '@/components/features/create-supply-request-dialog';
@@ -149,6 +150,7 @@ export default function DashboardPage() {
   }
 
   if (profile.role === 'User' || profile.role === null) {
+    const permittedScreens = getNavItemsForRole(profile.role, profile.permissionCodes).filter((item) => item.href !== '/dashboard');
     // docs/03 §1 point 5: "User" is a base authenticated account with ZERO default
     // capabilities - access exists only through explicit UserPermission grants, which
     // vary per account and have no fixed widget set docs/12 could specify. Showing the
@@ -161,9 +163,22 @@ export default function DashboardPage() {
     return (
       <div className="flex flex-col gap-4">
         <h1 className="font-heading text-xl font-medium text-foreground">مرحباً بك</h1>
-        <p className="text-sm text-muted-foreground">
-          لا توجد صلاحيات افتراضية لهذا الحساب. استخدم القائمة الجانبية للوصول إلى الشاشات المصرح بها لك، إن وجدت.
-        </p>
+        {permittedScreens.length > 0 ? (
+          <>
+            <p className="text-sm text-muted-foreground">الشاشات المتاحة لك حسب الصلاحيات الممنوحة لحسابك:</p>
+            <div className="flex flex-wrap gap-2">
+              {permittedScreens.map((screen) => (
+                <Button key={screen.href} asChild variant="outline">
+                  <Link href={screen.href}>{screen.label}</Link>
+                </Button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            لا توجد صلاحيات ممنوحة لهذا الحساب بعد. اطلب من المالك منحك الصلاحيات اللازمة.
+          </p>
+        )}
       </div>
     );
   }
