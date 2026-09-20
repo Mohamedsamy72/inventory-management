@@ -179,6 +179,12 @@ export default function DashboardPage() {
             لا توجد صلاحيات ممنوحة لهذا الحساب بعد. اطلب من المالك منحك الصلاحيات اللازمة.
           </p>
         )}
+        {profile.permissionCodes.includes('receiving:view') ? (
+          <div className="flex flex-col gap-3">
+            <h2 className="font-heading text-lg font-medium text-foreground">رصيد المخازن</h2>
+            <WarehouseInventoryCards />
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -219,11 +225,11 @@ export default function DashboardPage() {
         />
       </div>
 
-      {profile.role === 'Owner' ? (
+      {profile.permissionCodes.includes('receiving:view') ? (
         <div className="flex flex-col gap-3">
           <div>
             <h2 className="font-heading text-lg font-medium text-foreground">رصيد المخازن</h2>
-            <p className="text-sm text-muted-foreground">إجمالي الأصناف والقيمة لكل مخزن - اضغط على مخزن لعرض تفاصيل الأصناف والأسعار.</p>
+            <p className="text-sm text-muted-foreground">إجمالي الأصناف لكل مخزن - اضغط على مخزن لعرض تفاصيل الأصناف.</p>
           </div>
           <WarehouseInventoryCards />
         </div>

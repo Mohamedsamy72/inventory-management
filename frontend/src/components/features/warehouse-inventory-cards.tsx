@@ -8,6 +8,7 @@ import { LoadingSkeleton } from '@/components/feedback/loading-skeleton';
 import { EmptyState } from '@/components/feedback/empty-state';
 import { apiClient, ApiError } from '@/lib/api-client';
 import { formatCurrency } from '@/lib/formatters';
+import { useSession } from '@/lib/auth/session-context';
 
 interface NamedOption {
   id: string;
@@ -28,7 +29,7 @@ interface WarehouseSummaryCard {
 }
 
 /**
- * Owner-only financial overview requested for the dashboard: one card per warehouse with its
+ * Stock overview for the dashboard: one card per warehouse with its
  * total item count and total inventory value, clicking through to the existing item-level
  * balance/cost table (`/locations/{id}/stock`, Task F4). Only ever mounted from the Owner
  * dashboard branch - never Admin's - because `costs:view`/`valuation:view` are Owner-exclusive
@@ -39,6 +40,10 @@ interface WarehouseSummaryCard {
  */
 export function WarehouseInventoryCards() {
   const router = useRouter();
+  const { profile } = useSession();
+  // Quantities are shown to anyone who may view stock (receiving:view). The money value is shown only to
+  // an account that holds costs:view - the server already returns null costs to everyone else.
+  const showValue = profile?.permissionCodes.includes('costs:view') ?? false;
   const [cards, setCards] = useState<WarehouseSummaryCard[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -100,9 +105,11 @@ export function WarehouseInventoryCards() {
             <p className="text-sm text-muted-foreground">
               إجمالي الأصناف: <span className="font-medium text-foreground">{card.totalItems}</span>
             </p>
-            <p className="text-sm text-muted-foreground">
-              القيمة الإجمالية: <span className="font-medium text-foreground">{formatCurrency(card.totalValue)}</span>
-            </p>
+            {showValue ? (
+              <p className="text-sm text-muted-foreground">
+                القيمة الإجمالية: <span className="font-medium text-foreground">{formatCurrency(card.totalValue)}</span>
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       ))}
