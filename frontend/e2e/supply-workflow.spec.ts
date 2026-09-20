@@ -5,6 +5,7 @@ const API_BASE = process.env.E2E_API_BASE_URL ?? 'http://localhost:5165';
 const RESTAURANT_SUPERVISOR = { mobileNumber: '01849965248', password: 'Str0ng!Passw0rd' };
 const WAREHOUSE_STAFF = { mobileNumber: '01473808391', password: 'Str0ng!Passw0rd' };
 const RESTAURANT_ID = '5c4b5f50-b7bb-44b0-bf14-16f6160c2f06';
+const WAREHOUSE_ID = 'b872f3a3-5ecb-424c-8980-11b5dc779dbd';
 const ITEM_ID = 'f59e915b-b28c-4499-9d6b-0f3210131429';
 const UNIT_ID = '9d988f22-49ae-4ccf-827e-348c2a13d251';
 
@@ -49,7 +50,7 @@ test.describe('Supply request / supply confirmation workflow boundaries', () => 
 
     const createResponse = await supervisor.request.post(`${API_BASE}/api/v1/supply-requests`, {
       headers: await csrfHeader(supervisor.request),
-      data: { restaurantId: RESTAURANT_ID },
+      data: { restaurantId: RESTAURANT_ID, warehouseId: WAREHOUSE_ID },
     });
     expect(createResponse.ok()).toBeTruthy();
     const created = (await createResponse.json()) as { id: string };
@@ -84,7 +85,7 @@ test.describe('Supply request / supply confirmation workflow boundaries', () => 
 
     const createResponse = await supervisor.request.post(`${API_BASE}/api/v1/supply-requests`, {
       headers: await csrfHeader(supervisor.request),
-      data: { restaurantId: RESTAURANT_ID },
+      data: { restaurantId: RESTAURANT_ID, warehouseId: WAREHOUSE_ID },
     });
     const request = (await createResponse.json()) as { id: string };
 

@@ -1172,3 +1172,36 @@ Typecheck/lint/build all clean; 4 new routes registered (`/consumption`, `/stock
 `nav-items.ts` also links Owner ("إعدادات المنشأة") and Admin ("الإعدادات التشغيلية") to `/settings`, which also has no frontend page — but unlike the three gaps above, there is **no backend surface to wire it to either**: no `/api/v1/companies` or `/api/v1/settings` endpoint exists anywhere in `src/Inventory.Api/Features/`. `company_settings` exists only as a migrated table consumed internally for tenant-timezone period derivation (§9, task 5.2) — docs/09 never scheduled a CRUD task for it. This is recorded here rather than silently left as an unexplained dead nav link: it is **not** the same class of gap as §31.2/§31.5 (backend-complete, frontend-missing) — it is genuinely unscoped in both layers, and building a settings page/endpoint now would be exactly the kind of speculative, plan-unauthorized feature this document's own discipline section forbids. Left as an open item for an explicit product/plan decision, not silently fixed.
 
 Full solution suite (backend): 220/220 passing, unchanged by §31.5 (no backend edits). Frontend: clean typecheck/lint/build, both new modules verified live end-to-end as Owner with real stock-affecting numeric verification.
+
+---
+
+## 32. Product-Change Batch (2026-09-20) — Ledger
+
+Six explicit product changes, each traced DB → service → authorization → API → frontend → tests. **Full backend suite: 238/238 (27 unit, 19 architecture, 192 integration).** Frontend typecheck/lint/build clean; Playwright specs `supply-workflow`, `users-management`, `product-changes` pass against the live backend.
+
+| # | Change | Status | Notes |
+| :-: | :--- | :---: | :--- |
+| 1 | Remove restaurant "serving warehouse" | ✅ | **Reverses ADR-028** (explicit product decision: a restaurant may receive from several warehouses). Column/FK/index dropped by forward-only migration `RemoveRestaurantServingWarehouse`; `PUT /restaurants/{id}/serving-warehouse` removed; `POST /supply-requests` now takes an explicit `warehouseId`, validated server-side (exists, Active, same tenant via the filtered DbSet; error `409 WAREHOUSE_UNAVAILABLE`, renamed from `SERVING_WAREHOUSE_UNAVAILABLE`). Historical requests keep their own persisted `warehouse_id`. Restaurant Supervisor may pick any active company warehouse (no warehouse-scope concept exists for that role). docs/04 §8.2, docs/06, docs/07, docs/09-authorization-security §2.3 and plan tasks 2.18a/5.9/9.8/9.8a/9.12–9.14 still describe the old model and are **superseded by this section** (not rewritten - the plan stays the roadmap). |
+| 2 | "أمر توريد" → "أمر استلام" | ✅ | Frontend-only drift: backend audit text already said "أمر استلام". The warehouse→restaurant "توريد" feature is deliberately unchanged. |
+| 3 | Requested > available stock | ✅ verified, **no change** | Already implemented and tested: `StockPostingService.DeductAsync` is a single conditional atomic `UPDATE … WHERE quantity >= n`; `InsufficientStockException` → `400 INSUFFICIENT_STOCK` with Arabic message "الرصيد المتاح في المستودع غير كافٍ لإتمام العملية."; existing tests cover concurrency, depleted balance, cross-branch. Fulfilment intentionally stays advisory (ADR-019) - the hard block is at stock posting, and the new direct issue uses the same path. |
+| 4 | أمر صرف (Owner/Admin direct issue) | ✅ | `POST /api/v1/supplies/direct-issue` (idempotent, CSRF): one transaction creates a Supply with no request, walks Prepared→Dispatched→Confirmed, deducts via the existing posting service, audits `SUPPLY_DIRECT_ISSUED`. New permission `supplies:direct_issue` seeded to Owner/Admin only (migration `AddDirectIssueCapabilities`; existing codes did not fit). Response carries no cost fields. 10 integration tests (roles, cross-company, insufficient stock, replay, concurrency). UI: button + dialog on `/supplies`, base-unit quantities only. |
+| 5 | Settings page | ✅ | Root cause: `/settings` had **no page and no backend**. Added `GET/PUT /api/v1/settings` over `company_settings` (timezone editable + audited, currency/company read-only), permission `settings:manage` Owner/Admin (migration `AddSettingsCapability`), 8 tests, real page. |
+| 6 | الحركات / audit page | ✅ | Root cause: the page was a "coming later" placeholder over the fully built Phase 14 backend. Now a real Owner-only table (filters, keyset pagination, detail dialog). Backend tests already cover Owner/Admin 403, secrets, export; tenant isolation added. |
+
+### 32.1 Integration audit (screen → endpoint)
+
+Every nav entry now has a page and every `apiClient` path maps to a registered route (checked by grep of routes vs calls; the only broken links found were `/settings`, fixed above). No dead buttons remain among the audited screens.
+
+### 32.2 Not verified / open
+
+- Direct issue is verified by integration tests and role-gated browser checks, but a full browser walkthrough of the dialog with real stock was not run.
+- Direct issue accepts base-unit quantities only (no unit-conversion picker).
+- Currency is read-only by design; no company-name editing exists in the plan.
+- Two pre-existing timing-flaky tests (`IdempotencyServiceTests.Cleanup…`) can fail under parallel load; pass in isolation.
+
+### 32.3 Questions for Mohamed
+
+1. Should restaurants be restricted to a *set* of allowed warehouses (a join table), or is "any active company warehouse" correct?
+2. Should direct issue support non-base units (conversion picker)?
+3. Which additional settings (company name, working hours, low-stock thresholds) should the Settings page expose - none are defined in the plan today?
+
