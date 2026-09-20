@@ -185,11 +185,11 @@ export default function DashboardPage() {
           viewAllHref="/supply-requests"
         />
         <DashboardWidget<ReceivingOrderSummary>
-          title="أوامر التوريد قيد المعالجة"
+          title="أوامر الاستلام قيد المعالجة"
           fetchPath="/api/v1/receiving-orders"
           filter={(r) => r.status === 'Draft' || r.status === 'Submitted'}
           renderItem={renderDoc}
-          emptyMessage="لا توجد أوامر توريد قيد المعالجة"
+          emptyMessage="لا توجد أوامر استلام قيد المعالجة"
           viewAllHref="/receiving"
         />
         <DashboardWidget<DiscrepancySummary>

@@ -90,7 +90,7 @@ export default function ReceivingOrderPage() {
       const result = await apiClient.get<ReceivingOrder>(`/api/v1/receiving-orders/${params.id}`);
       setOrder(result);
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.messageAr : 'تعذر تحميل أمر التوريد');
+      setError(caught instanceof ApiError ? caught.messageAr : 'تعذر تحميل أمر الاستلام');
     } finally {
       setIsLoading(false);
     }
@@ -485,7 +485,7 @@ export default function ReceivingOrderPage() {
         <DialogContent>
           <form onSubmit={handleReverse} className="flex flex-col gap-4">
             <DialogHeader>
-              <DialogTitle>عكس أمر التوريد</DialogTitle>
+              <DialogTitle>عكس أمر الاستلام</DialogTitle>
               <DialogDescription>سيتم عكس كل حركات المخزون المسجلة لهذا الأمر. هذا الإجراء لا يمكن التراجع عنه.</DialogDescription>
             </DialogHeader>
 

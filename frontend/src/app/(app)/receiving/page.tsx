@@ -53,7 +53,7 @@ export default function ReceivingPage() {
 
   useEffect(() => {
     // "/names" (docs/03 §"Master Data" / §"Warehouses & Branches" - both ❌ for Warehouse
-    // Staff), not the manage-gated list: this page's own "أمر توريد جديد" dialog is exactly
+    // Staff), not the manage-gated list: this page's own "أمر استلام جديد" dialog is exactly
     // where a scoped Warehouse Staff user (who holds receiving:create but no warehouses:manage
     // or suppliers:manage) needs to pick a warehouse and an optional supplier by name.
     apiClient.get<NamedOption[]>('/api/v1/warehouses/names').then(setWarehouses).catch(() => setWarehouses([]));
@@ -99,7 +99,7 @@ export default function ReceivingPage() {
       setDialogOpen(false);
       router.push(`/receiving/${created.id}`);
     } catch (caught) {
-      setFormError(caught instanceof ApiError ? caught.messageAr : 'تعذر إنشاء أمر التوريد');
+      setFormError(caught instanceof ApiError ? caught.messageAr : 'تعذر إنشاء أمر الاستلام');
     } finally {
       setIsSubmitting(false);
     }
@@ -135,11 +135,11 @@ export default function ReceivingPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="font-heading text-xl font-medium text-foreground">أوامر التوريد</h1>
+        <h1 className="font-heading text-xl font-medium text-foreground">أوامر الاستلام</h1>
         {canCreate ? (
           <Button onClick={openCreate}>
             <Plus />
-            أمر توريد جديد
+            أمر استلام جديد
           </Button>
         ) : null}
       </div>
@@ -150,7 +150,7 @@ export default function ReceivingPage() {
         isLoading={isLoading}
         error={error ?? undefined}
         onRetry={refetch}
-        emptyMessage="لا توجد أوامر توريد مطابقة"
+        emptyMessage="لا توجد أوامر استلام مطابقة"
         onNextPage={nextPage}
         onPreviousPage={previousPage}
         hasNextPage={hasNextPage}
@@ -174,7 +174,7 @@ export default function ReceivingPage() {
         <DialogContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <DialogHeader>
-              <DialogTitle>أمر توريد جديد</DialogTitle>
+              <DialogTitle>أمر استلام جديد</DialogTitle>
               <DialogDescription>أدخل بيانات الأمر ثم أضف الأصناف بعد الإنشاء.</DialogDescription>
             </DialogHeader>
 

@@ -46,7 +46,7 @@ interface NamedOption {
  * scoped server-side per docs/03 (Warehouse Staff: their warehouses, every type; Restaurant
  * Supervisor: their restaurants, receipt variances only; Owner/Admin: everything). */
 const TYPE_LABELS: Record<Discrepancy['type'], string> = {
-  ReceivingVariance: 'فرق استلام توريد',
+  ReceivingVariance: 'فرق أمر استلام',
   SupplyReceiptVariance: 'فرق استلام من المخزن',
   StockCountVariance: 'فرق جرد فعلي',
   StockUnavailableAtConfirmation: 'نقص مخزون عند التأكيد',
