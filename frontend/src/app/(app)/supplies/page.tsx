@@ -5,7 +5,10 @@ import { useRouter } from 'next/navigation';
 import type { CellContext, ColumnDef } from '@tanstack/react-table';
 import { useSession } from '@/lib/auth/session-context';
 import { useKeysetList } from '@/lib/use-keyset-list';
+import { Plus } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { Button } from '@/components/ui/button';
+import { DirectIssueDialog } from '@/components/features/direct-issue-dialog';
 import { DataTable } from '@/components/ui/data-table';
 import { ForbiddenState } from '@/components/feedback/forbidden-state';
 import { StatusBadge } from '@/components/domain/status-badge';
@@ -34,6 +37,8 @@ export default function SuppliesPage() {
   const [warehouses, setWarehouses] = useState<NamedOption[]>([]);
   const [restaurants, setRestaurants] = useState<NamedOption[]>([]);
 
+  const [issueOpen, setIssueOpen] = useState(false);
+
   useEffect(() => {
     apiClient.get<NamedOption[]>('/api/v1/warehouses/names').then(setWarehouses).catch(() => undefined);
     apiClient.get<NamedOption[]>('/api/v1/restaurants/names').then(setRestaurants).catch(() => undefined);
@@ -42,6 +47,9 @@ export default function SuppliesPage() {
   if (profile && !profile.permissionCodes.includes('supplies:view')) {
     return <ForbiddenState reason="forbidden" />;
   }
+
+  // Convenience only - the backend independently enforces supplies:direct_issue (Owner/Admin).
+  const canDirectIssue = profile?.permissionCodes.includes('supplies:direct_issue') ?? false;
 
   function warehouseName(id: string): string {
     return warehouses.find((warehouse) => warehouse.id === id)?.nameArabic ?? '—';
@@ -80,7 +88,15 @@ export default function SuppliesPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="font-heading text-xl font-medium text-foreground">التوريدات الصادرة للفروع</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="font-heading text-xl font-medium text-foreground">التوريدات الصادرة للفروع</h1>
+        {canDirectIssue ? (
+          <Button onClick={() => setIssueOpen(true)}>
+            <Plus />
+            أمر صرف
+          </Button>
+        ) : null}
+      </div>
 
       <DataTable
         columns={columns}
@@ -106,6 +122,14 @@ export default function SuppliesPage() {
             <StatusBadge entity="Supply" status={row.status} />
           </button>
         )}
+      />
+
+      <DirectIssueDialog
+        open={issueOpen}
+        onOpenChange={setIssueOpen}
+        warehouses={warehouses}
+        restaurants={restaurants}
+        onIssued={(id) => router.push(`/supplies/${id}`)}
       />
     </div>
   );
