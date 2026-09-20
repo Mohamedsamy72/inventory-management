@@ -38,10 +38,10 @@ const PERMISSION_NAV: { codes: string[]; item: AppShellNavItem }[] = [
   { codes: ['suppliers:manage'], item: { href: '/suppliers', label: 'الموردون', icon: Truck } },
   { codes: ['receiving:view'], item: { href: '/receiving', label: 'الداخل الى المخزن', icon: Inbox } },
   { codes: ['supply_requests:view'], item: { href: '/supply-requests', label: 'طلبات البضاعه', icon: ClipboardList } },
-  { codes: ['supplies:view', 'supplies:direct_issue'], item: { href: '/supplies', label: 'الصادر الى المطعم', icon: Send } },
+  { codes: ['supplies:view'], item: { href: '/supplies', label: 'الصادر الى المطعم', icon: Send } },
   { codes: ['discrepancies:view'], item: { href: '/discrepancies', label: 'سجل الفروقات', icon: TriangleAlert } },
-  { codes: ['consumption:view', 'consumption:create'], item: { href: '/consumption', label: 'سجلات الاستهلاك', icon: UtensilsCrossed } },
-  { codes: ['users:view', 'users:manage'], item: { href: '/users', label: 'ادارة المستخدمين', icon: Users } },
+  { codes: ['consumption:view'], item: { href: '/consumption', label: 'سجلات الاستهلاك', icon: UtensilsCrossed } },
+  { codes: ['users:view'], item: { href: '/users', label: 'ادارة المستخدمين', icon: Users } },
   { codes: ['settings:manage'], item: { href: '/settings', label: 'الإعدادات', icon: Settings } },
 ];
 

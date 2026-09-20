@@ -61,14 +61,16 @@ export default function ItemsPage() {
   const [suppliers, setSuppliers] = useState<NamedOption[]>([]);
 
   async function loadReferenceData() {
-    const [categoryPage, unitPage, supplierPage] = await Promise.all([
-      apiClient.get<{ items: NamedOption[] }>('/api/v1/categories?limit=100'),
-      apiClient.get<{ items: NamedOption[] }>('/api/v1/units?limit=100'),
-      apiClient.get<{ items: NamedOption[] }>('/api/v1/suppliers?limit=100'),
+    // Names endpoints: available to anyone who may see items. Each list is independent, so one refused
+    // call can never take the whole page down (an uncaught rejection surfaces as a runtime overlay).
+    const [categoryList, unitList, supplierList] = await Promise.all([
+      apiClient.get<NamedOption[]>('/api/v1/categories/names').catch(() => [] as NamedOption[]),
+      apiClient.get<NamedOption[]>('/api/v1/units/names').catch(() => [] as NamedOption[]),
+      apiClient.get<NamedOption[]>('/api/v1/suppliers/names').catch(() => [] as NamedOption[]),
     ]);
-    setCategories(categoryPage.items);
-    setUnits(unitPage.items);
-    setSuppliers(supplierPage.items);
+    setCategories(categoryList);
+    setUnits(unitList);
+    setSuppliers(supplierList);
   }
 
   useEffect(() => {
@@ -354,6 +356,9 @@ export default function ItemsPage() {
                     <SelectValue placeholder="اختر وحدة" />
                   </SelectTrigger>
                   <SelectContent>
+                    {units.length === 0 ? (
+                      <p className="px-2 py-1.5 text-sm text-muted-foreground">لا توجد وحدات بعد - استخدم «إضافة وحدة جديدة» أعلاه.</p>
+                    ) : null}
                     {units.map((unit) => (
                       <SelectItem key={unit.id} value={unit.id}>
                         {unit.nameArabic}

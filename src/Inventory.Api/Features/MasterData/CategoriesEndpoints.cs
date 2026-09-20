@@ -6,6 +6,7 @@ namespace Inventory.Api.Features.MasterData;
 
 public sealed record CreateCategoryRequest(string NameArabic, string? Description);
 public sealed record UpdateCategoryRequest(string NameArabic, string? Description);
+public sealed record CategoryNameOption(Guid Id, string NameArabic);
 
 /// <summary>Task 5.5.</summary>
 public static class CategoriesEndpoints
@@ -19,6 +20,9 @@ public static class CategoriesEndpoints
         // matching their ❌ row in the matrix), so every operation here gates on it alike.
         categories.MapPost("/", CreateAsync).RequireAuthorization("categories:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         categories.MapGet("/", ListAsync).RequireAuthorization("categories:manage");
+        // Names only (id + Arabic name) for anyone who may see items - an item is displayed with its
+        // category, and categories:manage is a management permission, not a viewing one.
+        categories.MapGet("/names", ListNamesAsync).RequireAuthorization("items:view");
         categories.MapGet("/{id:guid}", GetAsync).RequireAuthorization("categories:manage");
         categories.MapPut("/{id:guid}", UpdateAsync).RequireAuthorization("categories:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
         categories.MapDelete("/{id:guid}", DeleteAsync).RequireAuthorization("categories:manage").AddEndpointFilter<AntiforgeryEndpointFilter>();
@@ -32,6 +36,12 @@ public static class CategoriesEndpoints
     {
         var result = await service.CreateAsync(new CreateCategoryCommand(request.NameArabic, request.Description), httpContext.RequestAborted);
         return result.Succeeded ? Results.Created($"/api/v1/categories/{result.Value!.Id}", result.Value) : await MasterDataErrorWriter.WriteErrorAsync(httpContext, result.Error);
+    }
+
+    private static async Task<IResult> ListNamesAsync(HttpContext httpContext, ICategoryService service)
+    {
+        KeysetPage<CategorySummary> page = await service.ListAsync(200, null, httpContext.RequestAborted);
+        return Results.Ok(page.Items.Select(c => new CategoryNameOption(c.Id, c.NameArabic)).ToList());
     }
 
     private static async Task<IResult> ListAsync(
