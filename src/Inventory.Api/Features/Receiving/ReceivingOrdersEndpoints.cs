@@ -2,6 +2,7 @@ using Inventory.Api.Errors;
 using Inventory.Api.Middleware;
 using Inventory.Application.Common;
 using Inventory.Application.Receiving;
+using Inventory.Application.Stock;
 using Inventory.Domain.Enums;
 
 namespace Inventory.Api.Features.Receiving;
@@ -11,6 +12,7 @@ public sealed record AddReceivingOrderLineRequest(Guid ItemId, Guid UnitId, deci
 public sealed record VerifyReceivingOrderLineRequest(Guid LineId, decimal ActualQuantity);
 public sealed record VerifyReceivingOrderRequest(IReadOnlyList<VerifyReceivingOrderLineRequest> Lines);
 public sealed record ReverseReceivingOrderRequest(string Reason);
+public sealed record SetStockRequest(decimal Quantity, string? Reason);
 
 /// <summary>Task 8.9: <see cref="IScopeGuard"/>'s first real consumer - Warehouse Staff (scoped
 /// per docs/03 §Receiving row) may only act on a warehouse in its scope set; Owner/Admin are
@@ -48,6 +50,9 @@ public static class ReceivingOrdersEndpoints
             .RequireIdempotencyKey();
 
         app.MapGet("/api/v1/warehouses/{id:guid}/stock", GetWarehouseStockAsync).RequireAuthorization("receiving:view");
+        app.MapPut("/api/v1/warehouses/{id:guid}/stock/{itemId:guid}", SetStockAsync)
+            .RequireAuthorization("stock:direct_set")
+            .AddEndpointFilter<AntiforgeryEndpointFilter>();
 
         return app;
     }
@@ -170,6 +175,24 @@ public static class ReceivingOrdersEndpoints
         }
 
         return Results.Ok(await service.GetWarehouseStockAsync(id, httpContext.RequestAborted));
+    }
+
+    private static async Task<IResult> SetStockAsync(
+        Guid id, Guid itemId, SetStockRequest request, HttpContext httpContext, IStockAdjustmentService service, IScopeGuard scopeGuard, ICurrentUserService currentUser)
+    {
+        if (request.Quantity < 0)
+        {
+            return Results.BadRequest();
+        }
+
+        IResult? forbidden = await CheckWarehouseScopeAsync(id, httpContext, scopeGuard, currentUser);
+        if (forbidden is not null)
+        {
+            return forbidden;
+        }
+
+        var result = await service.SetStockAsync(id, itemId, request.Quantity, request.Reason, httpContext.RequestAborted);
+        return result.Succeeded ? Results.Ok(result.Value) : await TransactionalErrorWriter.WriteErrorAsync(httpContext, result.Error, result.ErrorDetail);
     }
 
     private static async Task<IResult?> CheckOrderWarehouseScopeAsync(Guid orderId, HttpContext httpContext, IReceivingOrderService service, IScopeGuard scopeGuard, ICurrentUserService currentUser)

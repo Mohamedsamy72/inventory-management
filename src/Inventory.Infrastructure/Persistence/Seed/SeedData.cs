@@ -102,6 +102,10 @@ internal static class SeedData
 
         // Change 5 - tenant settings screen (docs/12: Owner and Admin only).
         new(PermissionId(38), "settings:manage", "إدارة إعدادات المنشأة", "settings"),
+
+        // Direct stock correction from the warehouse balance screen. Owner by default; the Owner can grant it
+        // to any user from user management. Deliberately NOT in AdminCodes.
+        new(PermissionId(39), "stock:direct_set", "تعديل رصيد المخزون مباشرة", "stock"),
     ];
 
     private static readonly string[] OwnerCodes =
@@ -118,7 +122,7 @@ internal static class SeedData
         "users:view", "users:manage", "users:scope",
         "discrepancies:view", "discrepancies:resolve",
         "consumption:create", "consumption:view",
-        "supplies:direct_issue", "settings:manage",
+        "supplies:direct_issue", "settings:manage", "stock:direct_set",
     ];
 
     private static readonly string[] AdminCodes =

@@ -111,6 +111,7 @@ public static class DependencyInjection
         services.AddScoped<IUnitConversionResolver, MasterData.UnitConversionResolver>();
         services.AddSingleton<Domain.Services.ICostingEngine, Domain.Services.CostingEngine>();
         services.AddScoped<IStockPostingService, Stock.StockPostingService>();
+        services.AddScoped<Application.Stock.IStockAdjustmentService, Stock.StockAdjustmentService>();
         services.AddScoped<IInTransitCalculator, Stock.InTransitCalculator>();
         services.AddScoped<IIdempotencyService, Idempotency.IdempotencyService>();
 

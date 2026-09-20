@@ -1268,3 +1268,13 @@ Backend: `OwnerUserManagementTests` (32) and `MasterDataLifecycleTests` (9: unus
 
 ### 35.5 Browser verification (real frontend → API → DB)
 `frontend/e2e/user-security-and-lifecycle.spec.ts` (4 tests): non-Owner blocked from `/account` and OTP endpoint 403; Owner OTP flow shows no password field before verification (tolerates the 3/15-min OTP limiter); Owner creates a scoped WarehouseStaff through the UI, resets their password (204, empty body) and the target logs in with it; delete of an unused category needs confirmation, cancel keeps it, confirm removes it. All 8 Playwright specs pass when run one file at a time (the 5/min/IP login limiter makes a single back-to-back run 429 — the limiter is intentionally unchanged). Backend: 247 integration + 27 unit + 19 architecture; frontend 33 unit, typecheck/lint/build clean.
+
+---
+
+## 36. Direct stock set (`stock:direct_set`) (2026-09-21)
+
+- **Permission:** new code `stock:direct_set` ("تعديل رصيد المخزون مباشرة", module `stock`), migration `AddDirectStockSetCapability`. Held by **Owner** by default, **not** by Admin/Staff/Supervisor/User; the Owner can grant it to any user in user management (a non-Owner can never grant a code they do not hold, so Admin cannot).
+- **Endpoint:** `PUT /api/v1/warehouses/{id}/stock/{itemId}` body `{ quantity, reason? }` (CSRF-protected, `stock:direct_set`; WarehouseStaff scope respected; negative → 400; other company / unknown id → 404). The stated quantity becomes the balance **in the item's base unit**. It is never an edit: the difference is posted through `IStockPostingService` as a `PHYSICAL_ADJUSTMENT` ledger row with reference `ManualAdjustment` (ledger stays append-only), audited as `STOCK_DIRECTLY_SET` (old/new quantity, reason, actor). Setting the current value again posts nothing.
+- **Invariants kept:** only warehouses hold stock; nothing touches restaurants; dispatch/receipt semantics unchanged. Note: setting a balance below the quantity currently *in transit* is allowed (Owner override) - a later receipt confirmation of that shipment would then fail with insufficient stock until stock is corrected.
+- **UI:** dashboard "رصيد المخازن" card → `/locations/{id}/stock` now lists **every item** (0 when no balance) with a pencil action for holders of the permission → confirmation dialog (new quantity, optional reason). The page also no longer depends on units/warehouse management permissions.
+- **Tests:** `DirectStockSetTests` (10): increase/decrease + ledger + audit, no-op on same value, negative/unknown/cross-company, 403 for Admin/Staff/Supervisor/User, Owner grants to a User who can then set, Admin cannot grant.
