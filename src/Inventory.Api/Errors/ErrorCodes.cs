@@ -31,6 +31,7 @@ internal static class ErrorCodes
     /// derived from a restaurant's default, but it still must exist, be `Active`, and belong to
     /// the caller's own company - this is what that validation returns.</summary>
     public const string WarehouseUnavailable = "WAREHOUSE_UNAVAILABLE";
+    public const string InvalidTimezone = "INVALID_TIMEZONE";
     public const string DuplicateItemName = "DUPLICATE_ITEM_NAME";
 
     /// <summary>New for Phase 5: docs/13's `DUPLICATE_ITEM_NAME` is item-specific by name and by
@@ -76,6 +77,7 @@ internal static class ErrorCodes
         GeneratedFieldNotAccepted => "لا يمكن إدخال أرقام المستندات يدوياً — يتم توليدها تلقائياً بواسطة النظام.",
         SequenceExhausted => "تم استنفاد نطاق ترقيم المستندات، يرجى مراجعة إدارة النظام.",
         WarehouseUnavailable => "المخزن المحدد غير موجود أو غير مفعّل.",
+        InvalidTimezone => "المنطقة الزمنية المدخلة غير صحيحة.",
         DuplicateItemName => "يوجد صنف مسجل مسبقاً بنفس الاسم العربي في المنشأة.",
         DuplicateName => "يوجد سجل مسجل مسبقاً بنفس الاسم أو الرمز في المنشأة.",
         BaseUnitImmutable => "لا يمكن تغيير وحدة القياس الأساسية بعد وجود حركات مخزنية لهذا الصنف.",
@@ -106,6 +108,7 @@ internal static class ErrorCodes
         GeneratedFieldNotAccepted => "Generated identifiers cannot be submitted.",
         SequenceExhausted => "Document numbering range exhausted.",
         WarehouseUnavailable => "The selected warehouse does not exist or is not active.",
+        InvalidTimezone => "The timezone is not valid.",
         DuplicateItemName => "An item with this Arabic name already exists.",
         DuplicateName => "A record with this name or code already exists.",
         BaseUnitImmutable => "The base unit cannot change once stock ledger entries exist for this item.",

@@ -1,4 +1,5 @@
 using Inventory.Api.Features.Audit;
+using Inventory.Api.Features.Settings;
 using Inventory.Api.Features.Auth;
 using Inventory.Api.Features.Consumption;
 using Inventory.Api.Features.MasterData;
@@ -135,6 +136,7 @@ app.MapSuppliesEndpoints();
 app.MapDiscrepanciesEndpoints();
 app.MapStockCountsEndpoints();
 app.MapAuditEndpoints();
+app.MapSettingsEndpoints();
 app.MapConsumptionEndpoints();
 
 // ---- Health probes (docs/32 CR-064) ---------------------------------------

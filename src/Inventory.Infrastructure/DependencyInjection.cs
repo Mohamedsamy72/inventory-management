@@ -132,6 +132,7 @@ public static class DependencyInjection
 
         // Phase 14: audit viewer & activity monitor (docs/09 14.1-14.5, ADR-013). Owner only.
         services.AddScoped<Application.Audit.IAuditReaderService, Audit.AuditReaderService>();
+        services.AddScoped<Application.Settings.ISettingsService, Settings.SettingsService>();
 
         // REQ-07 (docs/26, docs/04 §12) - restaurant consumption logging. Never scheduled by name
         // in docs/09; closed as a Phase T1 traceability gap. Zero stock effect.

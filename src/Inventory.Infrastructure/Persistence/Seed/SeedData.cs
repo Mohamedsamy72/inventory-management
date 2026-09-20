@@ -99,6 +99,9 @@ internal static class SeedData
         // new capability no existing code covers, same practice as Phase 12's
         // discrepancies:*/consumption:* additions above.
         new(PermissionId(37), "supplies:direct_issue", "صرف مباشر إلى الفرع", "supplies"),
+
+        // Change 5 - tenant settings screen (docs/12: Owner and Admin only).
+        new(PermissionId(38), "settings:manage", "إدارة إعدادات المنشأة", "settings"),
     ];
 
     private static readonly string[] OwnerCodes =
@@ -115,7 +118,7 @@ internal static class SeedData
         "users:view", "users:manage", "users:scope",
         "discrepancies:view", "discrepancies:resolve",
         "consumption:create", "consumption:view",
-        "supplies:direct_issue",
+        "supplies:direct_issue", "settings:manage",
     ];
 
     private static readonly string[] AdminCodes =
@@ -133,7 +136,7 @@ internal static class SeedData
         "users:view", "users:manage", "users:scope",
         "discrepancies:view", "discrepancies:resolve",
         "consumption:create", "consumption:view",
-        "supplies:direct_issue",
+        "supplies:direct_issue", "settings:manage",
     ];
 
     private static readonly string[] WarehouseStaffCodes =
