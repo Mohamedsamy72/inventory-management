@@ -1265,3 +1265,6 @@ Backend: `OwnerUserManagementTests` (32) and `MasterDataLifecycleTests` (9: unus
 2. May the Owner create another Owner? Currently no.
 3. For the Owner's mobile change, OTP goes to the NEW number only; should the current number also be verified?
 4. Draft receiving-order discard and stock-count cancel: implement?
+
+### 35.5 Browser verification (real frontend → API → DB)
+`frontend/e2e/user-security-and-lifecycle.spec.ts` (4 tests): non-Owner blocked from `/account` and OTP endpoint 403; Owner OTP flow shows no password field before verification (tolerates the 3/15-min OTP limiter); Owner creates a scoped WarehouseStaff through the UI, resets their password (204, empty body) and the target logs in with it; delete of an unused category needs confirmation, cancel keeps it, confirm removes it. All 8 Playwright specs pass when run one file at a time (the 5/min/IP login limiter makes a single back-to-back run 429 — the limiter is intentionally unchanged). Backend: 247 integration + 27 unit + 19 architecture; frontend 33 unit, typecheck/lint/build clean.
