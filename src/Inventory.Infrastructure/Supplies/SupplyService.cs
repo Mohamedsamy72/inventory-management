@@ -20,6 +20,7 @@ public sealed class SupplyService : ISupplyService
     private readonly IInTransitCalculator _inTransitCalculator;
     private readonly IStockPostingService _stockPostingService;
     private readonly IIdempotencyService _idempotencyService;
+    private readonly IUnitConversionResolver _unitConversionResolver;
 
     public SupplyService(
         InventoryDbContext context,
@@ -28,7 +29,8 @@ public sealed class SupplyService : ISupplyService
         IDocumentSequenceService sequenceService,
         IInTransitCalculator inTransitCalculator,
         IStockPostingService stockPostingService,
-        IIdempotencyService idempotencyService)
+        IIdempotencyService idempotencyService,
+        IUnitConversionResolver unitConversionResolver)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _currentUserService = currentUserService ?? throw new ArgumentNullException(nameof(currentUserService));
@@ -37,6 +39,7 @@ public sealed class SupplyService : ISupplyService
         _inTransitCalculator = inTransitCalculator ?? throw new ArgumentNullException(nameof(inTransitCalculator));
         _stockPostingService = stockPostingService ?? throw new ArgumentNullException(nameof(stockPostingService));
         _idempotencyService = idempotencyService ?? throw new ArgumentNullException(nameof(idempotencyService));
+        _unitConversionResolver = unitConversionResolver ?? throw new ArgumentNullException(nameof(unitConversionResolver));
     }
 
     public async Task<TransactionalResult<SupplyOperationResult>> FulfillAsync(
@@ -356,6 +359,117 @@ public sealed class SupplyService : ISupplyService
             {
                 SupplyOperationResult winner = JsonSerializer.Deserialize<SupplyOperationResult>(recheck.CachedPayloadJson)!;
                 return TransactionalResult.Success(winner);
+            }
+
+            return TransactionalResult.Failure<SupplyOperationResult>(TransactionalError.ConcurrencyConflict);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return TransactionalResult.Success(result);
+    }
+
+    public async Task<TransactionalResult<SupplyOperationResult>> DirectIssueAsync(
+        DirectIssueCommand command, IdempotencyContext idempotency, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(idempotency);
+
+        if (command.Lines.Count == 0 || command.Lines.Any(l => l.Quantity <= 0))
+        {
+            return TransactionalResult.Failure<SupplyOperationResult>(TransactionalError.EmptyDocument);
+        }
+
+        // Both DbSets carry the tenant global query filter (ADR-016): another company's id is
+        // indistinguishable from a nonexistent one and fails closed identically.
+        bool warehouseActive = await _context.Warehouses.AsNoTracking()
+            .AnyAsync(w => w.Id == command.WarehouseId && w.Status == WarehouseStatus.Active, cancellationToken);
+        if (!warehouseActive)
+        {
+            return TransactionalResult.Failure<SupplyOperationResult>(TransactionalError.WarehouseUnavailable);
+        }
+
+        bool restaurantActive = await _context.Restaurants.AsNoTracking()
+            .AnyAsync(r => r.Id == command.RestaurantId && r.Status == RestaurantStatus.Active, cancellationToken);
+        if (!restaurantActive)
+        {
+            return TransactionalResult.Failure<SupplyOperationResult>(TransactionalError.NotFound);
+        }
+
+        List<Guid> itemIds = command.Lines.Select(l => l.ItemId).Distinct().ToList();
+        int activeItems = await _context.Items.AsNoTracking().CountAsync(i => itemIds.Contains(i.Id) && i.IsActive, cancellationToken);
+        if (activeItems != itemIds.Count)
+        {
+            return TransactionalResult.Failure<SupplyOperationResult>(TransactionalError.NotFound);
+        }
+
+        var resolved = new List<(DirectIssueLineCommand Line, decimal BaseQuantity)>();
+        foreach (DirectIssueLineCommand line in command.Lines)
+        {
+            UnitConversionResolution resolution = await _unitConversionResolver.ResolveAsync(line.ItemId, line.UnitId, line.Quantity, cancellationToken);
+            if (!resolution.Succeeded)
+            {
+                return TransactionalResult.Failure<SupplyOperationResult>(TransactionalError.InvalidStateTransition, "CONVERSION_NOT_DEFINED");
+            }
+
+            resolved.Add((line, resolution.BaseQuantity));
+        }
+
+        Guid actor = _currentUserService.UserId;
+
+        await using IDbContextTransaction transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+        string documentNumber = await _sequenceService.AllocateAsync(DocumentType.Supply, cancellationToken);
+        var supply = new Supply(_currentUserService.CompanyId, command.WarehouseId, command.RestaurantId, supplyRequestId: null, documentNumber, actor);
+        _context.Supplies.Add(supply);
+
+        var supplyItems = new List<SupplyItem>();
+        var postingLines = new List<StockPostingLine>();
+        foreach ((DirectIssueLineCommand line, decimal baseQuantity) in resolved)
+        {
+            var supplyItem = new SupplyItem(supply.Id, null, line.ItemId, line.Quantity, line.UnitId, baseQuantity);
+            supplyItem.RecordReceipt(line.Quantity, baseQuantity);
+            supplyItems.Add(supplyItem);
+            _context.SupplyItems.Add(supplyItem);
+
+            postingLines.Add(new StockPostingLine(
+                command.WarehouseId, line.ItemId, line.UnitId, -line.Quantity, -baseQuantity,
+                MovementType.RestaurantReceiptConfirmed, ReferenceType.Supply, supply.Id, UnitCost: null));
+        }
+
+        try
+        {
+            await _stockPostingService.PostAsync(postingLines, cancellationToken);
+        }
+        catch (InsufficientStockException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return TransactionalResult.Failure<SupplyOperationResult>(TransactionalError.InsufficientStock);
+        }
+
+        supply.Dispatch(actor);
+        supply.Confirm(actor, SupplyStatus.Confirmed);
+
+        _auditLogger.Record(new AuditEntry(
+            "SUPPLY_DIRECT_ISSUED", nameof(Supply), supply.Id,
+            $"تم صرف مباشر إلى الفرع: {supply.DocumentNumber}",
+            OldValues: null, NewValues: new { supply.DocumentNumber, LineCount = supplyItems.Count }, Domain.Enums.AuditResult.Success,
+            WarehouseId: supply.WarehouseId, RestaurantId: supply.RestaurantId));
+
+        var result = new SupplyOperationResult(BuildSummary(supply, supplyItems), []);
+        _idempotencyService.RecordResponse(idempotency.Key, idempotency.Endpoint, idempotency.RawRequestBody, StatusCodes.Status201Created, result);
+
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+
+            IdempotencyCheckResult recheck = await _idempotencyService.CheckAsync(idempotency.Key, idempotency.Endpoint, idempotency.RawRequestBody, cancellationToken);
+            if (recheck.Outcome == IdempotencyOutcome.Replay && recheck.CachedPayloadJson is not null)
+            {
+                return TransactionalResult.Success(JsonSerializer.Deserialize<SupplyOperationResult>(recheck.CachedPayloadJson)!);
             }
 
             return TransactionalResult.Failure<SupplyOperationResult>(TransactionalError.ConcurrencyConflict);

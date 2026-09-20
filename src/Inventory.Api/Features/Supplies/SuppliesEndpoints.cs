@@ -11,6 +11,8 @@ public sealed record FulfillSupplyLineRequest(Guid SupplyRequestItemId, decimal 
 public sealed record FulfillSupplyRequestRequest(IReadOnlyList<FulfillSupplyLineRequest> Lines);
 public sealed record ConfirmSupplyLineRequest(Guid SupplyItemId, decimal ReceivedQuantity);
 public sealed record ConfirmSupplyRequestRequest(IReadOnlyList<ConfirmSupplyLineRequest> Lines);
+public sealed record DirectIssueLineRequest(Guid ItemId, Guid UnitId, decimal Quantity);
+public sealed record DirectIssueRequest(Guid WarehouseId, Guid RestaurantId, IReadOnlyList<DirectIssueLineRequest> Lines);
 
 /// <summary>Task 10.7: <see cref="IScopeGuard"/> warehouse-scope enforcement for Warehouse Staff
 /// on fulfil/dispatch/cancel (docs/03 §Supply Requests and §Supplies rows - both scoped for
@@ -38,7 +40,21 @@ public static class SuppliesEndpoints
             .AddEndpointFilter<AntiforgeryEndpointFilter>()
             .RequireIdempotencyKey();
 
+        // Change 4: Owner/Admin-only direct issue (supplies:direct_issue is seeded to no other role).
+        supplies.MapPost("/direct-issue", DirectIssueAsync)
+            .RequireAuthorization("supplies:direct_issue")
+            .AddEndpointFilter<AntiforgeryEndpointFilter>()
+            .RequireIdempotencyKey();
+
         return app;
+    }
+
+    private static async Task<IResult> DirectIssueAsync(DirectIssueRequest request, HttpContext httpContext, ISupplyService service)
+    {
+        IdempotencyContext idempotency = await BuildIdempotencyContextAsync(httpContext);
+        var command = new DirectIssueCommand(request.WarehouseId, request.RestaurantId, request.Lines.Select(l => new DirectIssueLineCommand(l.ItemId, l.UnitId, l.Quantity)).ToList());
+        var result = await service.DirectIssueAsync(command, idempotency, httpContext.RequestAborted);
+        return result.Succeeded ? Results.Created($"/api/v1/supplies/{result.Value!.Supply.Id}", result.Value) : await TransactionalErrorWriter.WriteErrorAsync(httpContext, result.Error, result.ErrorDetail);
     }
 
     private static async Task<IResult> FulfillAsync(Guid id, FulfillSupplyRequestRequest request, HttpContext httpContext, ISupplyService service, ISupplyRequestService supplyRequestService, IScopeGuard scopeGuard, ICurrentUserService currentUser)

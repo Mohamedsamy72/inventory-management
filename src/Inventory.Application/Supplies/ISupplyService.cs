@@ -34,4 +34,13 @@ public interface ISupplyService
     /// written (docs/30 §7.1's "impossible confirmation": the supply stays `Dispatched`,
     /// resolved only by a later physical stock count, never an auto-adjustment).</summary>
     Task<TransactionalResult<SupplyOperationResult>> ConfirmAsync(Guid id, ConfirmSupplyCommand command, IdempotencyContext idempotency, CancellationToken cancellationToken);
+
+    /// <summary>Change 4 - Owner/Admin direct issue ("أمر صرف"): ONE atomic transaction that
+    /// creates a `Supply` with no originating request, walks it Prepared -&gt; Dispatched -&gt;
+    /// Confirmed, and posts `RESTAURANT_RECEIPT_CONFIRMED` for the full quantity through the same
+    /// <see cref="IStockPostingService"/> conditional atomic deduction as <see cref="ConfirmAsync"/>
+    /// (so insufficient stock rolls back everything). Full quantity is received by definition -
+    /// no variance/discrepancy exists for a direct issue. Authorization (Owner/Admin only) is the
+    /// endpoint's permission policy, not this method's.</summary>
+    Task<TransactionalResult<SupplyOperationResult>> DirectIssueAsync(DirectIssueCommand command, IdempotencyContext idempotency, CancellationToken cancellationToken);
 }

@@ -93,6 +93,12 @@ internal static class SeedData
         // "every requirement has at least one verification test").
         new(PermissionId(35), "consumption:create", "تسجيل استهلاك", "consumption"),
         new(PermissionId(36), "consumption:view", "عرض سجلات الاستهلاك", "consumption"),
+
+        // Change 4 - direct warehouse-to-restaurant issue, bypassing the request/approval/
+        // confirmation cycle. Owner/Admin only (see OwnerCodes/AdminCodes below) - genuinely a
+        // new capability no existing code covers, same practice as Phase 12's
+        // discrepancies:*/consumption:* additions above.
+        new(PermissionId(37), "supplies:direct_issue", "صرف مباشر إلى الفرع", "supplies"),
     ];
 
     private static readonly string[] OwnerCodes =
@@ -109,6 +115,7 @@ internal static class SeedData
         "users:view", "users:manage", "users:scope",
         "discrepancies:view", "discrepancies:resolve",
         "consumption:create", "consumption:view",
+        "supplies:direct_issue",
     ];
 
     private static readonly string[] AdminCodes =
@@ -126,6 +133,7 @@ internal static class SeedData
         "users:view", "users:manage", "users:scope",
         "discrepancies:view", "discrepancies:resolve",
         "consumption:create", "consumption:view",
+        "supplies:direct_issue",
     ];
 
     private static readonly string[] WarehouseStaffCodes =

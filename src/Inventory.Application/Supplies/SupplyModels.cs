@@ -25,6 +25,18 @@ public sealed record ConfirmSupplyLineCommand(Guid SupplyItemId, decimal Receive
 
 public sealed record ConfirmSupplyCommand(IReadOnlyList<ConfirmSupplyLineCommand> Lines);
 
+/// <summary>Change 4 - one line of a direct warehouse-to-restaurant issue, in the unit the
+/// Owner/Admin entered. Resolved to the item's base unit server-side (via
+/// <see cref="Inventory.Application.Common.IUnitConversionResolver"/>) exactly like every other
+/// quantity entry point in the product - never accepted as a base quantity from the client.</summary>
+public sealed record DirectIssueLineCommand(Guid ItemId, Guid UnitId, decimal Quantity);
+
+/// <summary>Change 4 - Owner/Admin issuing inventory straight to a restaurant, bypassing the
+/// request/approval/confirmation cycle. <see cref="WarehouseId"/>/<see cref="RestaurantId"/> are
+/// validated server-side (exist, active, same company as the caller) exactly like a supply
+/// request's own warehouse choice - never trusted as-is.</summary>
+public sealed record DirectIssueCommand(Guid WarehouseId, Guid RestaurantId, IReadOnlyList<DirectIssueLineCommand> Lines);
+
 /// <summary>Task 10.6 (ADR-019): the item ids whose fulfilled/dispatched base quantity exceeded
 /// `available` (balance − in-transit) AT THE MOMENT of this specific operation - a live,
 /// point-in-time advisory, never persisted, never blocking, never a reservation. Only the
