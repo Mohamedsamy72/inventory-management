@@ -30,6 +30,8 @@ export interface QuickAddModalProps {
   onCreated: (entity: CreatedEntity) => void;
   /** 'field' renders the trigger as a full-width button that stands in for an empty select. */
   appearance?: "link" | "field";
+  /** Dialog heading when it should differ from the trigger label. */
+  dialogTitle?: string;
 }
 
 /**
@@ -44,6 +46,7 @@ export function QuickAddModal({
   secondaryField,
   onCreated,
   appearance = "link",
+  dialogTitle,
 }: QuickAddModalProps) {
   const [open, setOpen] = useState(false);
   const [nameArabic, setNameArabic] = useState("");
