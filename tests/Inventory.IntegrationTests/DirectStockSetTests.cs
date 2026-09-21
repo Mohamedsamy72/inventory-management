@@ -158,4 +158,59 @@ public sealed class DirectStockSetTests : IClassFixture<WebApplicationFactory<Pr
 
         Assert.Equal(HttpStatusCode.Forbidden, grant.StatusCode);
     }
+
+private sealed record CostLineDto(Guid ItemId, decimal Balance, decimal? AverageUnitCost);
+
+    private static async Task<CostLineDto?> CostLineAsync(HttpClient c, Guid warehouse, Guid item)
+    {
+        List<CostLineDto>? lines = await c.GetFromJsonAsync<List<CostLineDto>>($"/api/v1/warehouses/{warehouse}/stock");
+        return lines!.FirstOrDefault(l => l.ItemId == item);
+    }
+
+    [Fact]
+    public async Task Owner_Can_Enter_A_Unit_Cost_For_An_Increase_And_The_Average_Cost_Follows()
+    {
+        Ctx ctx = await NewCompanyAsync();
+
+        using HttpResponseMessage first = await AuthTestHelpers.SendJsonAsync(ctx.Owner, HttpMethod.Put, $"/api/v1/warehouses/{ctx.WarehouseId}/stock/{ctx.ItemId}", new { quantity = 10m, unitCost = 5m, reason = "افتتاحي" });
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        CostLineDto line = (await CostLineAsync(ctx.Owner, ctx.WarehouseId, ctx.ItemId))!;
+        Assert.Equal(10m, line.Balance);
+        Assert.Equal(5m, line.AverageUnitCost);
+
+        // +10 more at 15 -> weighted average (10*5 + 10*15) / 20 = 10.
+        using HttpResponseMessage second = await AuthTestHelpers.SendJsonAsync(ctx.Owner, HttpMethod.Put, $"/api/v1/warehouses/{ctx.WarehouseId}/stock/{ctx.ItemId}", new { quantity = 20m, unitCost = 15m, reason = "إضافة" });
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        CostLineDto after = (await CostLineAsync(ctx.Owner, ctx.WarehouseId, ctx.ItemId))!;
+        Assert.Equal(20m, after.Balance);
+        Assert.Equal(10m, after.AverageUnitCost);
+    }
+
+    [Fact]
+    public async Task A_Negative_Cost_Is_Rejected()
+    {
+        Ctx ctx = await NewCompanyAsync();
+        using HttpResponseMessage response = await AuthTestHelpers.SendJsonAsync(ctx.Owner, HttpMethod.Put, $"/api/v1/warehouses/{ctx.WarehouseId}/stock/{ctx.ItemId}", new { quantity = 1m, unitCost = -1m });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_User_Granted_Direct_Set_But_Not_Cost_Visibility_Cannot_Enter_A_Cost()
+    {
+        Ctx ctx = await NewCompanyAsync();
+        (User user, string pw) = await AuthTestHelpers.CreateUserInCompanyAsync(_factory, ctx.CompanyId);
+        await AuthTestHelpers.AssignRoleAsync(_factory, user.Id, RoleName.User);
+        using HttpResponseMessage grant = await AuthTestHelpers.SendJsonAsync(ctx.Owner, HttpMethod.Put, $"/api/v1/users/{user.Id}/permissions",
+            new { permissions = new[] { new { code = "stock:direct_set", isGranted = true } } });
+        Assert.Equal(HttpStatusCode.OK, grant.StatusCode);
+        using HttpClient client = await AuthTestHelpers.LoginAsAsync(_factory, user, pw);
+
+        using HttpResponseMessage withCost = await AuthTestHelpers.SendJsonAsync(client, HttpMethod.Put, $"/api/v1/warehouses/{ctx.WarehouseId}/stock/{ctx.ItemId}", new { quantity = 5m, unitCost = 3m });
+        Assert.Equal(HttpStatusCode.Forbidden, withCost.StatusCode);
+        Assert.Null(await LineAsync(ctx.Owner, ctx.WarehouseId, ctx.ItemId));
+
+        // Without a cost the same user may still set quantity.
+        using HttpResponseMessage withoutCost = await AuthTestHelpers.SendJsonAsync(client, HttpMethod.Put, $"/api/v1/warehouses/{ctx.WarehouseId}/stock/{ctx.ItemId}", new { quantity = 5m });
+        Assert.Equal(HttpStatusCode.OK, withoutCost.StatusCode);
+    }
 }

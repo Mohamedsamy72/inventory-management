@@ -20,6 +20,8 @@ public static class ConsumptionEndpoints
             .RequireAuthorization("consumption:create")
             .AddEndpointFilter<AntiforgeryEndpointFilter>();
         consumption.MapGet("/", ListAsync).RequireAuthorization("consumption:view");
+        // Print/report data for exactly the same filter + scope as the list (docs/27 section 37).
+        consumption.MapGet("/report", ReportAsync).RequireAuthorization("consumption:view");
 
         return app;
     }
@@ -37,8 +39,43 @@ public static class ConsumptionEndpoints
         return result.Succeeded ? Results.Created($"/api/v1/consumption/{result.Value!.Id}", result.Value) : await MasterDataErrorWriter.WriteErrorAsync(httpContext, result.Error);
     }
 
-    private static async Task<IResult> ListAsync(HttpContext httpContext, IConsumptionService service, IScopeGuard scopeGuard, ICurrentUserService currentUser, Guid? restaurantId, int? limit, string? cursor)
+    private const int MaxRangeDays = 366;
+
+    private static async Task<IResult> ListAsync(HttpContext httpContext, IConsumptionService service, IScopeGuard scopeGuard, ICurrentUserService currentUser, Guid? restaurantId, DateOnly? from, DateOnly? to, int? limit, string? cursor)
     {
+        (Guid? effectiveRestaurantId, IResult? rejected) = await ResolveFilterAsync(httpContext, scopeGuard, currentUser, restaurantId, from, to);
+        if (rejected is not null)
+        {
+            return rejected;
+        }
+
+        KeysetPage<ConsumptionRecordSummary> page = await service.ListAsync(effectiveRestaurantId, from, to, KeysetPagination.ClampLimit(limit), cursor, httpContext.RequestAborted);
+        return Results.Ok(page);
+    }
+
+    private static async Task<IResult> ReportAsync(HttpContext httpContext, IConsumptionService service, IScopeGuard scopeGuard, ICurrentUserService currentUser, Guid? restaurantId, DateOnly? from, DateOnly? to)
+    {
+        (Guid? effectiveRestaurantId, IResult? rejected) = await ResolveFilterAsync(httpContext, scopeGuard, currentUser, restaurantId, from, to);
+        if (rejected is not null)
+        {
+            return rejected;
+        }
+
+        return Results.Ok(await service.GetReportAsync(effectiveRestaurantId, from, to, httpContext.RequestAborted));
+    }
+
+    /// <summary>The one place the date-range validation and the Restaurant Supervisor scope rule live, so the list and the
+    /// print report can never disagree about what a caller may see. A client-supplied restaurant id never widens scope.</summary>
+    private static async Task<(Guid? RestaurantId, IResult? Rejected)> ResolveFilterAsync(
+        HttpContext httpContext, IScopeGuard scopeGuard, ICurrentUserService currentUser, Guid? restaurantId, DateOnly? from, DateOnly? to)
+    {
+        // Both dates or neither (neither = the rolling last 24 hours); from must not follow to; bounded span.
+        if ((from is null) != (to is null) || (from is { } f && to is { } t && (t < f || t.DayNumber - f.DayNumber >= MaxRangeDays)))
+        {
+            await ProblemResponseWriter.WriteAsync(httpContext, StatusCodes.Status400BadRequest, ErrorCodes.InvalidDateRange);
+            return (null, Results.Empty);
+        }
+
         if (currentUser.Role == RoleName.RestaurantSupervisor)
         {
             IReadOnlySet<Guid> authorizedRestaurantIds = await scopeGuard.GetAuthorizedRestaurantIdsAsync(currentUser.UserId, httpContext.RequestAborted);
@@ -47,14 +84,14 @@ public static class ConsumptionEndpoints
                 if (!authorizedRestaurantIds.Contains(requested))
                 {
                     await ProblemResponseWriter.WriteAsync(httpContext, StatusCodes.Status403Forbidden, ErrorCodes.ForbiddenScope);
-                    return Results.Empty;
+                    return (null, Results.Empty);
                 }
             }
             else if (authorizedRestaurantIds.Count != 1)
             {
                 // No single implicit restaurant to default to - require an explicit, in-scope id.
                 await ProblemResponseWriter.WriteAsync(httpContext, StatusCodes.Status403Forbidden, ErrorCodes.ForbiddenScope);
-                return Results.Empty;
+                return (null, Results.Empty);
             }
             else
             {
@@ -62,8 +99,7 @@ public static class ConsumptionEndpoints
             }
         }
 
-        KeysetPage<ConsumptionRecordSummary> page = await service.ListAsync(restaurantId, KeysetPagination.ClampLimit(limit), cursor, httpContext.RequestAborted);
-        return Results.Ok(page);
+        return (restaurantId, null);
     }
 
     private static async Task<IResult?> CheckRestaurantScopeAsync(Guid restaurantId, HttpContext httpContext, IScopeGuard scopeGuard, ICurrentUserService currentUser)

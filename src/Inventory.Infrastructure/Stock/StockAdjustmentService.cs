@@ -30,7 +30,7 @@ public sealed class StockAdjustmentService : IStockAdjustmentService
     }
 
     public async Task<TransactionalResult<WarehouseStockLine>> SetStockAsync(
-        Guid warehouseId, Guid itemId, decimal newBaseQuantity, string? reason, CancellationToken cancellationToken)
+        Guid warehouseId, Guid itemId, decimal newBaseQuantity, decimal? unitCost, string? reason, CancellationToken cancellationToken)
     {
         // The tenant query filters make another company's warehouse/item indistinguishable from a missing one.
         Warehouse? warehouse = await _context.Warehouses.AsNoTracking().FirstOrDefaultAsync(w => w.Id == warehouseId, cancellationToken);
@@ -47,6 +47,9 @@ public sealed class StockAdjustmentService : IStockAdjustmentService
             .Select(b => b.Quantity).FirstOrDefaultAsync(cancellationToken);
         decimal delta = newBaseQuantity - current;
 
+        // A cost only means something for an increase: it is the cost of the units being added.
+        bool withCost = unitCost is not null && delta > 0;
+
         if (delta != 0)
         {
             try
@@ -55,7 +58,7 @@ public sealed class StockAdjustmentService : IStockAdjustmentService
                 [
                     new StockPostingLine(
                         warehouseId, itemId, item.BaseUnitId, delta, delta,
-                        MovementType.PhysicalAdjustment, ReferenceType.ManualAdjustment, Guid.NewGuid(), UnitCost: null),
+                        withCost ? MovementType.OpeningBalance : MovementType.PhysicalAdjustment, ReferenceType.ManualAdjustment, Guid.NewGuid(), withCost ? unitCost : null),
                 ], cancellationToken);
             }
             catch (InsufficientStockException)
@@ -67,7 +70,7 @@ public sealed class StockAdjustmentService : IStockAdjustmentService
             _auditLogger.Record(new AuditEntry(
                 "STOCK_DIRECTLY_SET", nameof(StockBalance), itemId,
                 $"تم تعديل رصيد الصنف مباشرة: {item.NameArabic} في {warehouse.NameArabic} من {current} إلى {newBaseQuantity}",
-                OldValues: new { Quantity = current }, NewValues: new { Quantity = newBaseQuantity, Reason = reason },
+                OldValues: new { Quantity = current }, NewValues: new { Quantity = newBaseQuantity, UnitCost = withCost ? unitCost : null, Reason = reason },
                 Domain.Enums.AuditResult.Success, WarehouseId: warehouseId));
             await _context.SaveChangesAsync(cancellationToken);
         }

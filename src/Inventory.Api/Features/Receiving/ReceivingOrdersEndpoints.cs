@@ -12,7 +12,7 @@ public sealed record AddReceivingOrderLineRequest(Guid ItemId, Guid UnitId, deci
 public sealed record VerifyReceivingOrderLineRequest(Guid LineId, decimal ActualQuantity);
 public sealed record VerifyReceivingOrderRequest(IReadOnlyList<VerifyReceivingOrderLineRequest> Lines);
 public sealed record ReverseReceivingOrderRequest(string Reason);
-public sealed record SetStockRequest(decimal Quantity, string? Reason);
+public sealed record SetStockRequest(decimal Quantity, decimal? UnitCost, string? Reason);
 
 /// <summary>Task 8.9: <see cref="IScopeGuard"/>'s first real consumer - Warehouse Staff (scoped
 /// per docs/03 §Receiving row) may only act on a warehouse in its scope set; Owner/Admin are
@@ -178,11 +178,18 @@ public static class ReceivingOrdersEndpoints
     }
 
     private static async Task<IResult> SetStockAsync(
-        Guid id, Guid itemId, SetStockRequest request, HttpContext httpContext, IStockAdjustmentService service, IScopeGuard scopeGuard, ICurrentUserService currentUser)
+        Guid id, Guid itemId, SetStockRequest request, HttpContext httpContext, IStockAdjustmentService service, IScopeGuard scopeGuard, ICurrentUserService currentUser, IFinancialProjection financialProjection)
     {
-        if (request.Quantity < 0)
+        if (request.Quantity < 0 || request.UnitCost < 0)
         {
             return Results.BadRequest();
+        }
+
+        // Entering a cost is a financial input: only an account that may see costs may supply one.
+        if (request.UnitCost is not null && !financialProjection.IsVisible)
+        {
+            await ProblemResponseWriter.WriteAsync(httpContext, StatusCodes.Status403Forbidden, ErrorCodes.ForbiddenScope);
+            return Results.Empty;
         }
 
         IResult? forbidden = await CheckWarehouseScopeAsync(id, httpContext, scopeGuard, currentUser);
@@ -191,7 +198,7 @@ public static class ReceivingOrdersEndpoints
             return forbidden;
         }
 
-        var result = await service.SetStockAsync(id, itemId, request.Quantity, request.Reason, httpContext.RequestAborted);
+        var result = await service.SetStockAsync(id, itemId, request.Quantity, request.UnitCost, request.Reason, httpContext.RequestAborted);
         return result.Succeeded ? Results.Ok(result.Value) : await TransactionalErrorWriter.WriteErrorAsync(httpContext, result.Error, result.ErrorDetail);
     }
 

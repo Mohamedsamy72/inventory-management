@@ -231,3 +231,22 @@ html {
     @apply font-sans;
   }
 }
+/* Consumption report printing: only the report portal prints - the app shell, sidebar, filters and buttons are removed. */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  body > *:not(#consumption-print-root) {
+    display: none !important;
+  }
+
+  #consumption-print-root {
+    display: block !important;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+}

@@ -31,7 +31,7 @@ if not exist "%PG_BIN%\pg_ctl.exe" (
 )
 echo   starting PostgreSQL on 5433...
 REM Detached on purpose: waiting on pg_ctl itself can hang because the server inherits this console.
-start "PostgreSQL" /min cmd /c ""%PG_BIN%\pg_ctl.exe" start -D "%PG_DATA%" -l "C:\pg-inventory-system\logfile.log" -o "-p 5433""
+powershell -NoProfile -Command "Start-Process -FilePath '%PG_BIN%\pg_ctl.exe' -ArgumentList 'start','-D','%PG_DATA%','-l','C:\pg-inventory-system\logfile.log','-o','-p5433' -WindowStyle Hidden"
 set /a N=0
 :waitpg
 set /a N+=1
