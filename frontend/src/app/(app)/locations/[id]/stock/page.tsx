@@ -34,6 +34,19 @@ interface NamedOption {
 /** Task F4 (guide §8.2 "`/locations/{id}/stock`"): balance / in-transit / available per item,
  * cost column Owner-only (backend already masks `averageUnitCost` to null for non-Owner via
  * `IFinancialProjection` - this only additionally omits the COLUMN for a cleaner non-Owner view). */
+/** Loose Arabic comparison (alef/ya/ta-marbuta variants, diacritics, spacing) - mirrors how the server treats names as duplicates. */
+function normalizeArabic(value: string): string {
+  return value
+    .normalize('NFKC')
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 export default function WarehouseStockPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -54,6 +67,8 @@ export default function WarehouseStockPage() {
   // Entering a unit cost is a financial input - offered only to accounts that may see costs.
   const canEnterCost = profile?.permissionCodes.includes('costs:view') ?? false;
   const [addError, setAddError] = useState<string | null>(null);
+  // Set when the typed name is already an item of the company: offer to reuse it instead of a dead-end error.
+  const [existingItem, setExistingItem] = useState<{ id: string; name: string; balance: number } | null>(null);
   const [isAdding, setIsAdding] = useState(false);
 
   // Items with no balance are hidden by default (an item removed from the stock disappears from the list);
@@ -155,6 +170,7 @@ export default function WarehouseStockPage() {
     setAddQuantity('0');
     setAddUnitCost('');
     setAddError(null);
+    setExistingItem(null);
     setAddOpen(true);
   }
 
@@ -198,6 +214,14 @@ export default function WarehouseStockPage() {
         setAddOpen(false);
         await load();
         setError(`تم إنشاء الصنف لكن تعذر ضبط رصيده: ${message} يمكنك ضبطه من زر التعديل بجانب الصنف.`);
+      } else if (caught instanceof ApiError && caught.code === 'DUPLICATE_ITEM_NAME') {
+        const wanted = normalizeArabic(addName);
+        const match = items.find((item) => normalizeArabic(item.nameArabic) === wanted);
+        if (match) {
+          setExistingItem({ id: match.id, name: match.nameArabic, balance: lines.find((line) => line.itemId === match.id)?.balance ?? 0 });
+        } else {
+          setAddError(`${message} ابحث عنه في القائمة (فعّل «إظهار الأصناف بدون رصيد») واستخدم زر التعديل بجانبه.`);
+        }
       } else {
         setAddError(message);
       }
@@ -234,6 +258,34 @@ export default function WarehouseStockPage() {
       // The password never lingers in state after an attempt.
       setRemovePassword('');
       setIsRemoving(false);
+    }
+  }
+
+  /** Sets the entered quantity (and cost) on the item that already exists with this name, instead of creating a duplicate. */
+  async function useExistingItem() {
+    if (!existingItem) return;
+    const quantity = Number(addQuantity);
+    const unitCost = addUnitCost.trim() === '' ? null : Number(addUnitCost);
+    if (Number.isNaN(quantity) || quantity < 0) {
+      setAddError('أدخل رصيداً صحيحاً (صفر أو أكثر)');
+      return;
+    }
+    setIsAdding(true);
+    setAddError(null);
+    try {
+      await apiClient.put(`/api/v1/warehouses/${params.id}/stock/${existingItem.id}`, {
+        quantity,
+        unitCost: canEnterCost && quantity > existingItem.balance ? unitCost : null,
+        reason: 'ضبط الرصيد من نافذة إضافة صنف',
+      });
+      setAddOpen(false);
+      setExistingItem(null);
+      setShowZero(false);
+      await load();
+    } catch (caught) {
+      setAddError(caught instanceof ApiError ? caught.messageAr : 'تعذر ضبط الرصيد');
+    } finally {
+      setIsAdding(false);
     }
   }
 
@@ -350,9 +402,20 @@ export default function WarehouseStockPage() {
             <DialogDescription>ينشئ الصنف ويضبط رصيده الافتتاحي في هذا المخزن مباشرة، ويُسجَّل ذلك في سجل الحركات.</DialogDescription>
           </DialogHeader>
           {addError ? <ErrorBanner message={addError} /> : null}
+          {existingItem ? (
+            <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/40 p-3 text-sm" data-testid="existing-item-notice">
+              <p>
+                الصنف «{existingItem.name}» موجود بالفعل في المنشأة (رصيده الحالي في هذا المخزن: {existingItem.balance}). يمكنك استخدامه وضبط رصيده
+                {canEnterCost ? ' وتكلفته' : ''} بالقيم المدخلة بدلاً من إنشاء صنف جديد.
+              </p>
+              <Button className="self-start" loading={isAdding} onClick={() => void useExistingItem()}>
+                استخدام الصنف الموجود وضبط رصيده إلى {addQuantity || 0}
+              </Button>
+            </div>
+          ) : null}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="add-item-name">اسم الصنف</Label>
-            <Input id="add-item-name" value={addName} onChange={(event) => setAddName(event.target.value)} />
+            <Input id="add-item-name" value={addName} onChange={(event) => { setAddName(event.target.value); setExistingItem(null); }} />
           </div>
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between">

@@ -51,3 +51,39 @@ test('the warehouse stock screen can add a brand-new item together with its open
   expect(stock.find((line) => line.balance === 12)?.averageUnitCost).toBe(5);
   await context.close();
 });
+
+test('adding an item whose name already exists offers to reuse it and set its stock', async ({ browser }) => {
+  const context = await browser.newContext();
+  const request = context.request;
+  expect((await request.post(`${API_BASE}/api/v1/auth/login`, { headers: { 'X-CSRF-TOKEN': await csrf(request) }, data: OWNER })).ok()).toBeTruthy();
+
+  const stamp = String(Date.now()).slice(-6);
+  const warehouse = await post<{ id: string }>(request, '/api/v1/warehouses', { nameArabic: `مخزن ${stamp}`, code: `WH-${stamp}`, address: null, description: null });
+  const category = await post<{ id: string }>(request, '/api/v1/categories', { nameArabic: `قسم ${stamp}`, description: null });
+  const unit = await post<{ id: string }>(request, '/api/v1/units', { nameArabic: `كرتونة${stamp}`, abbreviation: null });
+  const itemName = `توست ${stamp}`;
+  // The item exists but has no stock in this warehouse (so it is not in the default list).
+  await post(request, '/api/v1/items', { nameArabic: itemName, categoryId: category.id, baseUnitId: unit.id, purchaseUnitId: null, defaultSupplierId: null, description: null });
+
+  const page = await context.newPage();
+  await page.goto(`/locations/${warehouse.id}/stock`);
+  await page.getByRole('button', { name: 'إضافة صنف بالرصيد' }).click();
+  await page.getByLabel('اسم الصنف').fill(itemName);
+  await page.locator('#add-item-category').click();
+  await page.getByRole('option', { name: `قسم ${stamp}` }).click();
+  await page.locator('#add-item-unit').click();
+  await page.getByRole('option', { name: `كرتونة${stamp}` }).click();
+  await page.getByLabel('الرصيد الافتتاحي في هذا المخزن').fill('120');
+  await page.getByLabel('تكلفة الوحدة (ج.م)').fill('220');
+  await page.getByRole('button', { name: 'حفظ الصنف والرصيد' }).click();
+
+  const notice = page.getByTestId('existing-item-notice');
+  await expect(notice).toContainText('موجود بالفعل');
+  await notice.getByRole('button', { name: /استخدام الصنف الموجود/ }).click();
+
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const row = page.getByRole('row', { name: new RegExp(itemName) });
+  await expect(row).toBeVisible();
+  await expect(row).toContainText('120');
+  await context.close();
+});
