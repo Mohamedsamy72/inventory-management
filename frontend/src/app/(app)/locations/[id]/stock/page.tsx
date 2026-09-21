@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useSession } from '@/lib/auth/session-context';
 import { apiClient, ApiError } from '@/lib/api-client';
 import { formatCurrency, formatQuantity } from '@/lib/formatters';
-import { Pencil, Plus } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -55,6 +55,15 @@ export default function WarehouseStockPage() {
   const canEnterCost = profile?.permissionCodes.includes('costs:view') ?? false;
   const [addError, setAddError] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+
+  // Items with no balance are hidden by default (an item removed from the stock disappears from the list);
+  // the toggle brings them back so their stock can be set directly.
+  const [showZero, setShowZero] = useState(false);
+  const [removing, setRemoving] = useState<{ itemId: string; balance: number } | null>(null);
+  const [removePassword, setRemovePassword] = useState('');
+  const [removeReason, setRemoveReason] = useState('');
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
 
   const [editing, setEditing] = useState<{ itemId: string; current: number } | null>(null);
   const [newQuantity, setNewQuantity] = useState('');
@@ -137,6 +146,8 @@ export default function WarehouseStockPage() {
     }
   }
 
+  const visibleRows = showZero ? rows : rows.filter((line) => line.balance > 0 || line.inTransit > 0);
+
   function openAdd() {
     setAddName('');
     setAddCategoryId('');
@@ -195,6 +206,37 @@ export default function WarehouseStockPage() {
     }
   }
 
+  function openRemove(line: WarehouseStockLine) {
+    setRemoving({ itemId: line.itemId, balance: line.balance });
+    setRemovePassword('');
+    setRemoveReason('');
+    setRemoveError(null);
+  }
+
+  async function confirmRemove() {
+    if (!removing) return;
+    if (removePassword === '') {
+      setRemoveError('أدخل كلمة المرور لتأكيد الحذف');
+      return;
+    }
+    setIsRemoving(true);
+    setRemoveError(null);
+    try {
+      await apiClient.post(`/api/v1/warehouses/${params.id}/stock/${removing.itemId}/remove`, {
+        password: removePassword,
+        reason: removeReason.trim() === '' ? null : removeReason.trim(),
+      });
+      setRemoving(null);
+      await load();
+    } catch (caught) {
+      setRemoveError(caught instanceof ApiError ? caught.messageAr : 'تعذر حذف الصنف');
+    } finally {
+      // The password never lingers in state after an attempt.
+      setRemovePassword('');
+      setIsRemoving(false);
+    }
+  }
+
   function itemName(id: string): string {
     return items.find((item) => item.id === id)?.nameArabic ?? '—';
   }
@@ -220,10 +262,17 @@ export default function WarehouseStockPage() {
         </div>
       </div>
 
+      {canSetStock ? (
+        <label className="flex w-fit items-center gap-2 text-sm text-muted-foreground">
+          <input type="checkbox" checked={showZero} onChange={(event) => setShowZero(event.target.checked)} />
+          إظهار الأصناف بدون رصيد
+        </label>
+      ) : null}
+
       {isLoading ? (
         <TableLoadingSkeleton columns={(isOwner ? 5 : 4) + (canSetStock ? 1 : 0)} />
-      ) : rows.length === 0 ? (
-        <EmptyState message="لا يوجد رصيد مسجل لهذا المخزن" />
+      ) : visibleRows.length === 0 ? (
+        <EmptyState message={rows.length === 0 ? 'لا يوجد رصيد مسجل لهذا المخزن' : 'لا توجد أصناف ذات رصيد في هذا المخزن'} />
       ) : (
         <div className="overflow-auto rounded-lg border border-border">
           <Table>
@@ -238,7 +287,7 @@ export default function WarehouseStockPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((line) => (
+              {visibleRows.map((line) => (
                 <TableRow key={line.itemId}>
                   {isOwner ? <TableCell>{line.averageUnitCost !== null ? formatCurrency(line.averageUnitCost) : '—'}</TableCell> : null}
                   <TableCell>{formatQuantity(line.available, units[line.itemId] ?? '')}</TableCell>
@@ -250,6 +299,11 @@ export default function WarehouseStockPage() {
                       <Button variant="ghost" size="icon-sm" onClick={() => openEdit(line)} aria-label={`تعديل رصيد ${itemName(line.itemId)}`}>
                         <Pencil />
                       </Button>
+                      {line.balance > 0 ? (
+                        <Button variant="ghost" size="icon-sm" onClick={() => openRemove(line)} aria-label={`حذف ${itemName(line.itemId)} من المخزن`}>
+                          <Trash2 />
+                        </Button>
+                      ) : null}
                     </TableCell>
                   ) : null}
                 </TableRow>
@@ -258,6 +312,37 @@ export default function WarehouseStockPage() {
           </Table>
         </div>
       )}
+      <Dialog open={removing !== null} onOpenChange={(open) => (open ? undefined : setRemoving(null))}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>حذف الصنف من المخزن</DialogTitle>
+            <DialogDescription>
+              {removing
+                ? `سيتم حذف «${itemName(removing.itemId)}» من هذا المخزن وكان رصيده ${formatQuantity(removing.balance, units[removing.itemId] ?? '')}. `
+                : ''}
+              سيُسجَّل في سجل الحركات اسمك والصنف والكمية التي كانت موجودة. أدخل كلمة المرور للتأكيد.
+            </DialogDescription>
+          </DialogHeader>
+          {removeError ? <ErrorBanner message={removeError} /> : null}
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="remove-password">كلمة المرور</Label>
+            <Input id="remove-password" type="password" dir="ltr" autoComplete="current-password" value={removePassword} onChange={(event) => setRemovePassword(event.target.value)} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="remove-reason">السبب (اختياري)</Label>
+            <Input id="remove-reason" value={removeReason} onChange={(event) => setRemoveReason(event.target.value)} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoving(null)}>
+              إلغاء
+            </Button>
+            <Button variant="destructive" loading={isRemoving} onClick={() => void confirmRemove()}>
+              تأكيد الحذف
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent>
           <DialogHeader>

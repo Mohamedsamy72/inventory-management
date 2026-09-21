@@ -1299,3 +1299,9 @@ Backend: `OwnerUserManagementTests` (32) and `MasterDataLifecycleTests` (9: unus
 
 ### 37.3 Note on browser specs
 The older Playwright specs authenticate with the pre-reset seeded dev accounts, which no longer exist after the explicit local database reset; the two new specs use a dedicated test tenant (`E2E Consumption Co`). Re-seed those accounts (or point the specs at new ones) before re-running the old suite.
+
+### 37.4 Removing an item from the stock (password-confirmed)
+- `POST /api/v1/warehouses/{id}/stock/{itemId}/remove` `{ password, reason? }` (`stock:direct_set`, CSRF, warehouse scope). The caller's password is re-verified first with `CheckPasswordSignInAsync(lockoutOnFailure: true)` - same lockout as login (5th wrong attempt -> `429`); wrong/missing password -> `400 PASSWORD_CONFIRMATION_FAILED` and nothing changes. The password is never logged, audited or echoed.
+- Effect: the whole balance is written to zero as a `PHYSICAL_ADJUSTMENT` ledger row (reference `ManualAdjustment`; the ledger stays append-only, the item master and its history are untouched). Refused (`409`) while any of the item is in transit from that warehouse. Zero balance is a quiet no-op. Audited as `STOCK_ITEM_REMOVED` with a description naming the user, item, warehouse and the quantity that existed (visible on the "الحركات" screen).
+- UI: trash button on stocked rows -> confirmation dialog with password (+ optional reason). Items with no balance are hidden by default; "إظهار الأصناف بدون رصيد" (permission holders) shows them so their stock can be set again.
+- Tests: `DirectStockSetTests` (now 18) incl. audit content, wrong/missing password, lockout, 403 without permission, cross-company 404; browser `e2e/stock-remove-item.spec.ts`.

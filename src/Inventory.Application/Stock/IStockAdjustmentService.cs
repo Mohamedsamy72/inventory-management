@@ -16,4 +16,12 @@ public interface IStockAdjustmentService
 {
     Task<TransactionalResult<WarehouseStockLine>> SetStockAsync(
         Guid warehouseId, Guid itemId, decimal newBaseQuantity, decimal? unitCost, string? reason, CancellationToken cancellationToken);
+
+    /// <summary>Removes an item from a warehouse's stock: the whole balance is written off to zero as a
+    /// `PhysicalAdjustment` ledger row (history is kept - the ledger is append-only) and an audit entry records who removed
+    /// which item and how much was there. Refused while any of the item is in transit from this warehouse. The caller must
+    /// already have re-verified the user's password.</summary>
+    Task<TransactionalResult<StockRemovalResult>> RemoveItemAsync(Guid warehouseId, Guid itemId, string? reason, CancellationToken cancellationToken);
 }
+
+public sealed record StockRemovalResult(Guid ItemId, string ItemName, decimal PreviousQuantity, string UnitName);

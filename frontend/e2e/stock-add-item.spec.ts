@@ -37,6 +37,7 @@ test('the warehouse stock screen can add a brand-new item together with its open
   await page.locator('#add-item-unit').click();
   await page.getByRole('option', { name: `كرتونة${stamp}` }).click();
   await page.getByLabel('الرصيد الافتتاحي في هذا المخزن').fill('12');
+  await page.getByLabel('تكلفة الوحدة (ج.م)').fill('5');
   await page.getByRole('button', { name: 'حفظ الصنف والرصيد' }).click();
 
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -45,7 +46,8 @@ test('the warehouse stock screen can add a brand-new item together with its open
   await expect(row).toContainText('12');
 
   // The balance is a real ledger-backed value: the API agrees.
-  const stock = (await (await request.get(`${API_BASE}/api/v1/warehouses/${warehouse.id}/stock`)).json()) as { balance: number }[];
+  const stock = (await (await request.get(`${API_BASE}/api/v1/warehouses/${warehouse.id}/stock`)).json()) as { balance: number; averageUnitCost: number | null }[];
   expect(stock.map((line) => line.balance)).toContain(12);
+  expect(stock.find((line) => line.balance === 12)?.averageUnitCost).toBe(5);
   await context.close();
 });

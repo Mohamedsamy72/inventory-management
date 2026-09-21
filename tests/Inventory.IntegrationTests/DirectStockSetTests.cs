@@ -213,4 +213,104 @@ private sealed record CostLineDto(Guid ItemId, decimal Balance, decimal? Average
         using HttpResponseMessage withoutCost = await AuthTestHelpers.SendJsonAsync(client, HttpMethod.Put, $"/api/v1/warehouses/{ctx.WarehouseId}/stock/{ctx.ItemId}", new { quantity = 5m });
         Assert.Equal(HttpStatusCode.OK, withoutCost.StatusCode);
     }
+
+private const string OwnerPassword = "Str0ng!Passw0rd"; // AuthTestHelpers.CreateUserInCompanyAsync's fixed password
+
+    private static Task<HttpResponseMessage> RemoveAsync(HttpClient c, Guid warehouse, Guid item, string? password) =>
+        AuthTestHelpers.PostJsonAsync(c, $"/api/v1/warehouses/{warehouse}/stock/{item}/remove", new { password, reason = "تالف" });
+
+    [Fact]
+    public async Task Removing_An_Item_With_The_Right_Password_Zeroes_It_And_Audits_Who_And_How_Much()
+    {
+        Ctx ctx = await NewCompanyAsync();
+        await SetAsync(ctx.Owner, ctx.WarehouseId, ctx.ItemId, 37m);
+
+        using HttpResponseMessage response = await RemoveAsync(ctx.Owner, ctx.WarehouseId, ctx.ItemId, OwnerPassword);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(0m, (await LineAsync(ctx.Owner, ctx.WarehouseId, ctx.ItemId))!.Balance);
+
+        using IServiceScope scope = _factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        Assert.Contains(-37m, await context.StockLedgerEntries.IgnoreQueryFilters()
+            .Where(e => e.CompanyId == ctx.CompanyId && e.ItemId == ctx.ItemId).Select(e => e.BaseQuantity).ToListAsync());
+
+        AuditLog audit = await context.AuditLogs.IgnoreQueryFilters().SingleAsync(a => a.CompanyId == ctx.CompanyId && a.Action == "STOCK_ITEM_REMOVED");
+        Assert.Contains("Auth Test User", audit.DescriptionArabic);   // who
+        Assert.Contains("37", audit.DescriptionArabic);               // how much was there
+        Assert.Equal(ctx.WarehouseId, audit.WarehouseId);
+        Assert.Equal(RoleName.Owner.ToString(), audit.ActorRole.ToString());
+        Assert.DoesNotContain(OwnerPassword, audit.DescriptionArabic + audit.OldValuesJson + audit.NewValuesJson);
+    }
+
+    [Fact]
+    public async Task A_Wrong_Or_Missing_Password_Removes_Nothing_And_Audits_Nothing()
+    {
+        Ctx ctx = await NewCompanyAsync();
+        await SetAsync(ctx.Owner, ctx.WarehouseId, ctx.ItemId, 10m);
+
+        using HttpResponseMessage wrong = await RemoveAsync(ctx.Owner, ctx.WarehouseId, ctx.ItemId, "not-the-password");
+        using HttpResponseMessage missing = await RemoveAsync(ctx.Owner, ctx.WarehouseId, ctx.ItemId, null);
+
+        Assert.Equal(HttpStatusCode.BadRequest, wrong.StatusCode);
+        Assert.Contains("PASSWORD_CONFIRMATION_FAILED", await wrong.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.BadRequest, missing.StatusCode);
+        Assert.Equal(10m, (await LineAsync(ctx.Owner, ctx.WarehouseId, ctx.ItemId))!.Balance);
+
+        using IServiceScope scope = _factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        Assert.False(await context.AuditLogs.IgnoreQueryFilters().AnyAsync(a => a.CompanyId == ctx.CompanyId && a.Action == "STOCK_ITEM_REMOVED"));
+    }
+
+    [Fact]
+    public async Task Repeated_Wrong_Passwords_Lock_The_Confirmation_Out_Even_For_The_Right_Password()
+    {
+        Ctx ctx = await NewCompanyAsync();
+        await SetAsync(ctx.Owner, ctx.WarehouseId, ctx.ItemId, 10m);
+
+        for (int i = 0; i < 4; i++)
+        {
+            using HttpResponseMessage wrong = await RemoveAsync(ctx.Owner, ctx.WarehouseId, ctx.ItemId, "nope" + i);
+            Assert.Equal(HttpStatusCode.BadRequest, wrong.StatusCode);
+        }
+
+        // The fifth failure trips the same lockout the login uses.
+        using HttpResponseMessage fifth = await RemoveAsync(ctx.Owner, ctx.WarehouseId, ctx.ItemId, "nope4");
+        Assert.Equal(HttpStatusCode.TooManyRequests, fifth.StatusCode);
+
+        using HttpResponseMessage locked = await RemoveAsync(ctx.Owner, ctx.WarehouseId, ctx.ItemId, OwnerPassword);
+        Assert.Equal(HttpStatusCode.TooManyRequests, locked.StatusCode);
+        Assert.Equal(10m, (await LineAsync(ctx.Owner, ctx.WarehouseId, ctx.ItemId))!.Balance);
+    }
+
+    [Fact]
+    public async Task Without_The_Permission_Removal_Is_Forbidden_Even_With_The_Correct_Password()
+    {
+        Ctx ctx = await NewCompanyAsync();
+        await SetAsync(ctx.Owner, ctx.WarehouseId, ctx.ItemId, 10m);
+        (User user, string pw) = await AuthTestHelpers.CreateUserInCompanyAsync(_factory, ctx.CompanyId);
+        await AuthTestHelpers.AssignRoleAsync(_factory, user.Id, RoleName.User);
+        using HttpClient client = await AuthTestHelpers.LoginAsAsync(_factory, user, pw);
+
+        using HttpResponseMessage response = await RemoveAsync(client, ctx.WarehouseId, ctx.ItemId, pw);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(10m, (await LineAsync(ctx.Owner, ctx.WarehouseId, ctx.ItemId))!.Balance);
+    }
+
+    [Fact]
+    public async Task Removing_An_Item_With_No_Stock_Is_A_Quiet_No_Op_And_Cross_Company_Is_404()
+    {
+        Ctx ctx = await NewCompanyAsync();
+        Ctx other = await NewCompanyAsync();
+
+        using HttpResponseMessage none = await RemoveAsync(ctx.Owner, ctx.WarehouseId, ctx.ItemId, OwnerPassword);
+        using HttpResponseMessage foreign = await RemoveAsync(ctx.Owner, other.WarehouseId, ctx.ItemId, OwnerPassword);
+
+        Assert.Equal(HttpStatusCode.OK, none.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, foreign.StatusCode);
+        using IServiceScope scope = _factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        Assert.False(await context.AuditLogs.IgnoreQueryFilters().AnyAsync(a => a.CompanyId == ctx.CompanyId && a.Action == "STOCK_ITEM_REMOVED"));
+    }
 }

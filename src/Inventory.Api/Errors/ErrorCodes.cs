@@ -12,6 +12,7 @@ internal static class ErrorCodes
     public const string NonGrantablePermission = "NON_GRANTABLE_PERMISSION";
     public const string ForbiddenScope = "FORBIDDEN_SCOPE";
     public const string InvalidDateRange = "INVALID_DATE_RANGE";
+    public const string PasswordConfirmationFailed = "PASSWORD_CONFIRMATION_FAILED";
 
     /// <summary>Not in docs/13's original catalogue - added for task 4.8 (docs/09 §2.4's
     /// privilege-escalation guards: no self role/scope change, only Owner creates Owner, Admin
@@ -80,6 +81,7 @@ internal static class ErrorCodes
         RateLimitExceeded => "تجاوزت الحد المسموح من المحاولات، يرجى الانتظار والمحاولة لاحقاً.",
         NonGrantablePermission => "هذه الصلاحية مخصصة للمالك فقط ولا يمكن منحها لأي مستخدم.",
         ForbiddenScope => "ليس لديك صلاحية للوصول إلى هذا المستودع أو الفرع.",
+        PasswordConfirmationFailed => "كلمة المرور غير صحيحة، لم يتم تنفيذ العملية.",
         InvalidDateRange => "الفترة الزمنية غير صحيحة: حدّد تاريخ البداية والنهاية معاً، ويجب ألا يسبق تاريخ النهاية تاريخ البداية، وألا تتجاوز الفترة 366 يوماً.",
         PrivilegeEscalationDenied => "لا يمكنك تنفيذ هذا الإجراء، فهو يتجاوز الصلاحيات الممنوحة لك.",
         InvalidPassword => "كلمة المرور لا تحقق متطلبات القوة المطلوبة.",
@@ -119,6 +121,7 @@ internal static class ErrorCodes
         RateLimitExceeded => "Too many requests. Please wait.",
         NonGrantablePermission => "This permission cannot be assigned.",
         ForbiddenScope => "You are not authorized for this location.",
+        PasswordConfirmationFailed => "Incorrect password; the operation was not performed.",
         InvalidDateRange => "Invalid date range: give both from and to, to must not precede from, and the span is at most 366 days.",
         PrivilegeEscalationDenied => "This action exceeds your granted authority.",
         InvalidPassword => "Password does not meet the required complexity.",

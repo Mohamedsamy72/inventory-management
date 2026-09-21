@@ -3,7 +3,9 @@ using Inventory.Api.Middleware;
 using Inventory.Application.Common;
 using Inventory.Application.Receiving;
 using Inventory.Application.Stock;
+using Inventory.Domain.Entities;
 using Inventory.Domain.Enums;
+using Microsoft.AspNetCore.Identity;
 
 namespace Inventory.Api.Features.Receiving;
 
@@ -12,6 +14,7 @@ public sealed record AddReceivingOrderLineRequest(Guid ItemId, Guid UnitId, deci
 public sealed record VerifyReceivingOrderLineRequest(Guid LineId, decimal ActualQuantity);
 public sealed record VerifyReceivingOrderRequest(IReadOnlyList<VerifyReceivingOrderLineRequest> Lines);
 public sealed record ReverseReceivingOrderRequest(string Reason);
+public sealed record RemoveStockItemRequest(string Password, string? Reason);
 public sealed record SetStockRequest(decimal Quantity, decimal? UnitCost, string? Reason);
 
 /// <summary>Task 8.9: <see cref="IScopeGuard"/>'s first real consumer - Warehouse Staff (scoped
@@ -51,6 +54,9 @@ public static class ReceivingOrdersEndpoints
 
         app.MapGet("/api/v1/warehouses/{id:guid}/stock", GetWarehouseStockAsync).RequireAuthorization("receiving:view");
         app.MapPut("/api/v1/warehouses/{id:guid}/stock/{itemId:guid}", SetStockAsync)
+            .RequireAuthorization("stock:direct_set")
+            .AddEndpointFilter<AntiforgeryEndpointFilter>();
+        app.MapPost("/api/v1/warehouses/{id:guid}/stock/{itemId:guid}/remove", RemoveStockItemAsync)
             .RequireAuthorization("stock:direct_set")
             .AddEndpointFilter<AntiforgeryEndpointFilter>();
 
@@ -199,6 +205,42 @@ public static class ReceivingOrdersEndpoints
         }
 
         var result = await service.SetStockAsync(id, itemId, request.Quantity, request.UnitCost, request.Reason, httpContext.RequestAborted);
+        return result.Succeeded ? Results.Ok(result.Value) : await TransactionalErrorWriter.WriteErrorAsync(httpContext, result.Error, result.ErrorDetail);
+    }
+
+    /// <summary>Removing an item from the stock is destructive, so the caller's PASSWORD is re-verified first (with the same
+    /// lockout as login, so it cannot be brute-forced from a hijacked session). The password is never logged, audited or echoed.</summary>
+    private static async Task<IResult> RemoveStockItemAsync(
+        Guid id, Guid itemId, RemoveStockItemRequest request, HttpContext httpContext, IStockAdjustmentService service, IScopeGuard scopeGuard,
+        ICurrentUserService currentUser, UserManager<User> userManager, SignInManager<User> signInManager)
+    {
+        IResult? forbidden = await CheckWarehouseScopeAsync(id, httpContext, scopeGuard, currentUser);
+        if (forbidden is not null)
+        {
+            return forbidden;
+        }
+
+        User? user = await userManager.FindByIdAsync(currentUser.UserId.ToString());
+        if (user is null || string.IsNullOrEmpty(request.Password))
+        {
+            await ProblemResponseWriter.WriteAsync(httpContext, StatusCodes.Status400BadRequest, ErrorCodes.PasswordConfirmationFailed);
+            return Results.Empty;
+        }
+
+        Microsoft.AspNetCore.Identity.SignInResult check = await signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
+        if (check.IsLockedOut)
+        {
+            await ProblemResponseWriter.WriteAsync(httpContext, StatusCodes.Status429TooManyRequests, ErrorCodes.RateLimitExceeded);
+            return Results.Empty;
+        }
+
+        if (!check.Succeeded)
+        {
+            await ProblemResponseWriter.WriteAsync(httpContext, StatusCodes.Status400BadRequest, ErrorCodes.PasswordConfirmationFailed);
+            return Results.Empty;
+        }
+
+        var result = await service.RemoveItemAsync(id, itemId, request.Reason, httpContext.RequestAborted);
         return result.Succeeded ? Results.Ok(result.Value) : await TransactionalErrorWriter.WriteErrorAsync(httpContext, result.Error, result.ErrorDetail);
     }
 
